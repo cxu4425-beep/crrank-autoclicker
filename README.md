@@ -1,10 +1,10 @@
-# CR Rank 自動收成器
+﻿# CR Rank 自動收成器
 
 定時點擊 [CR Rank 知識領土](https://crrank.xpgs25.com/game) 上方的「收成 +金幣/建材」按鈕。單一 exe，電腦和手機都能用。
 
 ## 下載
 
-到 [Releases](../../releases) 下載 `CRRank自動收成器.exe`，直接執行即可（不用安裝 Python）。
+到 [Releases](../../releases) 下載 `CRRank.exe`，直接執行即可（不用安裝 Python）。
 
 ## 電腦連點
 

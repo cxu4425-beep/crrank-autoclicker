@@ -1,0 +1,7 @@
+*.exe
+__pycache__/
+build/
+dist/
+*.spec
+crrank_clicker_settings.json
+crrank_手機檔案/

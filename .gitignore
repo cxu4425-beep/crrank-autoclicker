@@ -9,3 +9,4 @@ crrank_手機檔案/
 *.apk
 *.jks
 android/out/
+*.idsig

@@ -242,7 +242,8 @@ public class MainActivity extends Activity {
         p.addView(urlTxt);
         p.addView(hint("控制頁提供兩種用法：\n"
                 + "① 書籤／使用者腳本：在瀏覽器的遊戲頁上直接自動點「收成」，可設間隔、可選自動找按鈕或自訂位置。\n"
-                + "② 遙控：用那個裝置開始／停止這支手機的連點、改間隔。"));
+                + "② 遙控：用那個裝置開始／停止這支手機的連點、改間隔。\n"
+                + "iPhone 也能用：用 iPhone 掃描後，照頁面裡的「iPhone 教學」設定 Safari 書籤。"));
         p.addView(btn("📋 複製書籤碼（給這支手機的瀏覽器用）", v -> {
             ClipboardManager cm = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
             cm.setPrimaryClip(ClipData.newPlainText("書籤碼", Res.bookmarklet(this)));

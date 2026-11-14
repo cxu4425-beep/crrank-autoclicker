@@ -8,19 +8,56 @@ button{font-size:16px;padding:10px 14px;border:0;border-radius:8px;background:#f
 button.red{background:#ff6b6b}textarea{width:100%;height:90px;font-size:11px;box-sizing:border-box}
 input,select{font-size:16px;padding:6px;width:90px}ol{padding-left:20px}a{color:#7cc4ff}
 #st{font-size:14px;opacity:.9}
+details{background:#262c3e;border-radius:10px;padding:8px 12px;margin:10px 0}
+summary{font-weight:bold;font-size:16px;cursor:pointer;padding:4px 0}
+.step{display:flex;gap:10px;margin:12px 0;align-items:flex-start}
+.n{flex:none;width:26px;height:26px;border-radius:50%;background:#ffc93c;color:#222;font-weight:bold;text-align:center;line-height:26px}
+.mock{background:#f2f2f7;color:#222;border-radius:12px;padding:8px 10px;margin-top:6px;font-size:13px}
+.bar{display:flex;justify-content:space-around;align-items:center;background:#fff;border-radius:10px;padding:6px 0;margin-top:6px}
+.bar svg{width:24px;height:24px;stroke:#007aff;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.hl{outline:3px solid #ff9f0a;outline-offset:3px;border-radius:6px}
+.row{display:flex;justify-content:space-between;background:#fff;border-radius:8px;padding:7px 10px;margin-top:4px}
+.blue{color:#007aff}.k{background:#ffc93c33;border-radius:4px;padding:0 4px;color:#ffd66b}
+.mock .k{color:#b06d00;background:#ffc93c55}
 </style></head><body>
 <h1>CR Rank 自動收成 · 手機</h1>
 <h2>方法一：在手機瀏覽器裡自動點（推薦）</h2>
 <div class="card">
-<p>1. 按「複製書籤碼」，在瀏覽器新增一個書籤，名稱填 <b>收成</b>，網址貼上剛複製的內容。</p>
-<p>2. 打開 <a href="https://crrank.xpgs25.com/game" target="_blank">知識領土遊戲頁</a> 並登入。</p>
-<p>3. <b>Chrome (Android)</b>：在網址列輸入「收成」，點選書籤那一項。<b>Safari (iPhone)</b>：從書籤列表點「收成」。</p>
-<p>4. 畫面上會出現控制面板：設定間隔秒數、選「自動找收成按鈕」或「點自訂位置」，按開始。</p>
-<button onclick="cp()">複製書籤碼</button>
+<p>先按這個按鈕複製書籤碼，再照你的手機選下面的教學：</p>
+<button onclick="cp()">📋 複製書籤碼</button>
 <textarea id="bm" readonly>__BM__</textarea>
-<p style="font-size:13px;opacity:.8">有裝 Tampermonkey／Violentmonkey（如 Firefox、Kiwi、Edge 手機版）也可以直接安裝
-<a href="/crrank.user.js">使用者腳本</a>，進遊戲頁就會自動出現面板。<br>
-注意：手機請保持螢幕亮著、遊戲分頁在前景，否則瀏覽器會暫停計時。</p>
+
+<details id="ios"><summary>🍎 iPhone / iPad（Safari）教學</summary>
+<div class="step"><div class="n">1</div><div>按上面的 <span class="k">📋 複製書籤碼</span>。如果跳出「請手動複製」，就長按文字框 → 全選 → 拷貝。</div></div>
+<div class="step"><div class="n">2</div><div>在 Safari 開著這一頁，點下方的 <b>分享</b> 按鈕，選 <b>加入書籤</b> → 右上角 <b>儲存</b>。
+<div class="mock">Safari 下方工具列
+<div class="bar"><svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg><svg viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>
+<span class="hl"><svg viewBox="0 0 24 24"><path d="M12 3v12M8 7l4-4 4 4M5 11v9h14v-9"/></svg></span>
+<svg viewBox="0 0 24 24"><path d="M3 5h7a2 2 0 0 1 2 2v13a2 2 0 0 0-2-2H3zM21 5h-7a2 2 0 0 0-2 2v13a2 2 0 0 1 2-2h7z"/></svg>
+<svg viewBox="0 0 24 24"><rect x="4" y="4" width="12" height="12" rx="2"/><path d="M8 20h10a2 2 0 0 0 2-2V8"/></svg></div>
+<div class="row"><span>加入書籤</span><span class="blue">📖</span></div></div></div></div>
+<div class="step"><div class="n">3</div><div>點 <b>書籤</b> 按鈕（打開的書）→ 右下角 <b>編輯</b> → 點剛剛新增的那個書籤。
+<div class="mock"><div class="bar"><svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg><svg viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>
+<svg viewBox="0 0 24 24"><path d="M12 3v12M8 7l4-4 4 4M5 11v9h14v-9"/></svg>
+<span class="hl"><svg viewBox="0 0 24 24"><path d="M3 5h7a2 2 0 0 1 2 2v13a2 2 0 0 0-2-2H3zM21 5h-7a2 2 0 0 0-2 2v13a2 2 0 0 1 2-2h7z"/></svg></span>
+<svg viewBox="0 0 24 24"><rect x="4" y="4" width="12" height="12" rx="2"/><path d="M8 20h10a2 2 0 0 0 2-2V8"/></svg></div>
+<div class="row"><span>自動收成 · 手機</span><span class="blue">›</span></div>
+<div style="text-align:right;margin-top:4px" class="blue"><span class="hl">編輯</span></div></div></div></div>
+<div class="step"><div class="n">4</div><div>把<b>名稱</b>改成 <span class="k">收成</span>；把<b>網址</b>那一格<b>全部刪掉</b>，長按 → <b>貼上</b>剛剛複製的書籤碼（開頭是 <span class="k">javascript:</span>）→ 完成。
+<div class="mock"><div class="row"><span>收成</span></div><div class="row" style="color:#888">javascript:(function(){if(window.__crac…</div></div></div></div>
+<div class="step"><div class="n">5</div><div>打開 <a href="https://crrank.xpgs25.com/game" target="_blank">知識領土遊戲頁</a> 並登入 → 點 <b>書籤</b> 按鈕 → 點 <span class="k">收成</span>，畫面左上就會出現「自動收成」面板。設定間隔、選「自動找收成按鈕」或「點自訂位置」，按 <b>開始</b>。</div></div>
+<div class="step"><div class="n">6</div><div><b>重要：</b>iPhone 鎖定畫面或切到別的 App 時，Safari 會暫停計時。請到 <b>設定 → 螢幕顯示與亮度 → 自動鎖定 → 永不</b>，並讓遊戲分頁停在畫面上（可以把亮度調低省電）。</div></div>
+<p style="font-size:13px;opacity:.85"><b>想要每次進遊戲自動出現面板？</b>到 App Store 安裝免費的「<b>Userscripts</b>」→ 到 設定 → App → Safari → 延伸功能（舊版 iOS：設定 → Safari → 延伸功能）開啟 Userscripts，並允許所有網站 → 用 Safari 開
+<a href="/crrank.user.js">使用者腳本</a> → 點網址列旁的 <b>ᴀA</b> / 拼圖按鈕 → Userscripts → <b>安裝</b>。</p>
+</details>
+
+<details id="android"><summary>🤖 Android（Chrome）教學</summary>
+<div class="step"><div class="n">1</div><div>按上面的 <span class="k">📋 複製書籤碼</span>。</div></div>
+<div class="step"><div class="n">2</div><div>點右上角 <b>⋮</b> → <b>☆</b> 把這頁加入書籤 → 點下方出現的 <b>編輯</b>，名稱改成 <span class="k">收成</span>，網址整個換成剛複製的內容。</div></div>
+<div class="step"><div class="n">3</div><div>打開 <a href="https://crrank.xpgs25.com/game" target="_blank">知識領土遊戲頁</a> 並登入 → 在<b>網址列輸入「收成」</b>，點選下面出現的書籤那一項，面板就會出現。</div></div>
+<p style="font-size:13px;opacity:.85">也可以安裝 Android App（GitHub Release 的 CRRank-AutoHarvest.apk），或在 Firefox／Kiwi／Edge 裝 Tampermonkey 後安裝
+<a href="/crrank.user.js">使用者腳本</a>。手機請保持螢幕亮著、遊戲分頁在前景。</p>
+</details>
 </div>
 <h2>方法二：用這個裝置遙控手機連點</h2>
 <div class="card">
@@ -32,10 +69,15 @@ input,select{font-size:16px;padding:6px;width:90px}ol{padding-left:20px}a{color:
 </div>
 <script>
 var T='__TOKEN__';
-function cp(){var t=document.getElementById('bm');t.focus();t.select();t.setSelectionRange(0,99999);
+(function(){var ua=navigator.userAgent,ios=/iPhone|iPad|iPod/.test(ua)||(/Macintosh/.test(ua)&&navigator.maxTouchPoints>1);
+document.getElementById(ios?'ios':(/Android/.test(ua)?'android':'ios')).open=true;})();
+function cp(){var t=document.getElementById('bm');t.removeAttribute('readonly');t.contentEditable=true;t.focus();
+var r=document.createRange();r.selectNodeContents(t);var s=window.getSelection();s.removeAllRanges();s.addRange(r);
+t.select();t.setSelectionRange(0,t.value.length);
 var ok=false;try{ok=document.execCommand('copy');}catch(e){}
+t.setAttribute('readonly','');t.contentEditable=false;t.blur();
 if(navigator.clipboard&&window.isSecureContext){navigator.clipboard.writeText(t.value);ok=true;}
-alert(ok?'已複製！請新增書籤並貼到網址欄。':'請長按文字框全選後手動複製');}
+alert(ok?'已複製！請照下面的教學新增書籤並貼到網址欄。':'請長按文字框 → 全選 → 拷貝');}
 var first=true;
 function show(s){document.getElementById('st').innerHTML=(s.running?'<b style="color:#7f7">執行中</b>':'<b>已停止</b>')+
 ' · 位置 ('+s.x+', '+s.y+') · 已點 '+s.count+' 次'+(s.running?' · 下次 '+s.next_in+' 秒':'');

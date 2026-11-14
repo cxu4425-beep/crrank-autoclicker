@@ -5,3 +5,7 @@ dist/
 *.spec
 crrank_clicker_settings.json
 crrank_手機檔案/
+
+*.apk
+*.jks
+android/out/

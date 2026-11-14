@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">CR Rank 自動收成</string>
+    <string name="game_title">知識領土（內建自動收成）</string>
+    <string name="service_name">CR Rank 自動收成（自動點擊）</string>
+    <string name="acc_desc">讓「CR Rank 自動收成」可以依你設定的間隔，在你選的螢幕位置自動點一下（用來點知識領土的「收成」按鈕），並顯示浮動控制鈕。此服務不會讀取畫面內容。</string>
+</resources>

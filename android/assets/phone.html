@@ -1,0 +1,46 @@
+<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>自動收成 · 手機</title>
+<style>
+body{font-family:sans-serif;background:#141722;color:#eee;margin:0;padding:16px;line-height:1.6}
+h1{font-size:20px;margin:0 0 12px}h2{font-size:17px;margin:22px 0 8px;color:#ffc93c}
+.card{background:#1f2433;border-radius:12px;padding:14px;margin-bottom:12px}
+button{font-size:16px;padding:10px 14px;border:0;border-radius:8px;background:#ffc93c;color:#222;font-weight:bold;margin:4px 4px 4px 0}
+button.red{background:#ff6b6b}textarea{width:100%;height:90px;font-size:11px;box-sizing:border-box}
+input,select{font-size:16px;padding:6px;width:90px}ol{padding-left:20px}a{color:#7cc4ff}
+#st{font-size:14px;opacity:.9}
+</style></head><body>
+<h1>CR Rank 自動收成 · 手機</h1>
+<h2>方法一：在手機瀏覽器裡自動點（推薦）</h2>
+<div class="card">
+<p>1. 按「複製書籤碼」，在瀏覽器新增一個書籤，名稱填 <b>收成</b>，網址貼上剛複製的內容。</p>
+<p>2. 打開 <a href="https://crrank.xpgs25.com/game" target="_blank">知識領土遊戲頁</a> 並登入。</p>
+<p>3. <b>Chrome (Android)</b>：在網址列輸入「收成」，點選書籤那一項。<b>Safari (iPhone)</b>：從書籤列表點「收成」。</p>
+<p>4. 畫面上會出現控制面板：設定間隔秒數、選「自動找收成按鈕」或「點自訂位置」，按開始。</p>
+<button onclick="cp()">複製書籤碼</button>
+<textarea id="bm" readonly>__BM__</textarea>
+<p style="font-size:13px;opacity:.8">有裝 Tampermonkey／Violentmonkey（如 Firefox、Kiwi、Edge 手機版）也可以直接安裝
+<a href="/crrank.user.js">使用者腳本</a>，進遊戲頁就會自動出現面板。<br>
+注意：手機請保持螢幕亮著、遊戲分頁在前景，否則瀏覽器會暫停計時。</p>
+</div>
+<h2>方法二：用這個裝置遙控手機連點</h2>
+<div class="card">
+<div id="st">讀取中…</div>
+<p>間隔 <input id="iv" type="number" min="1"> <select id="un"><option>秒</option><option>分</option><option>時</option></select>
+<button onclick="api('set?interval='+iv.value+'&unit='+encodeURIComponent(un.value))">套用</button></p>
+<button onclick="api('start')">開始</button><button class="red" onclick="api('stop')">停止</button>
+<button onclick="api('once')">立即點一次</button>
+</div>
+<script>
+var T='__TOKEN__';
+function cp(){var t=document.getElementById('bm');t.focus();t.select();t.setSelectionRange(0,99999);
+var ok=false;try{ok=document.execCommand('copy');}catch(e){}
+if(navigator.clipboard&&window.isSecureContext){navigator.clipboard.writeText(t.value);ok=true;}
+alert(ok?'已複製！請新增書籤並貼到網址欄。':'請長按文字框全選後手動複製');}
+var first=true;
+function show(s){document.getElementById('st').innerHTML=(s.running?'<b style="color:#7f7">執行中</b>':'<b>已停止</b>')+
+' · 位置 ('+s.x+', '+s.y+') · 已點 '+s.count+' 次'+(s.running?' · 下次 '+s.next_in+' 秒':'');
+if(first){iv.value=s.interval;un.value=s.unit;first=false;}}
+function api(p){fetch('/api/'+p+(p.indexOf('?')<0?'?':'&')+'t='+T).then(function(r){return r.json()}).then(show).catch(function(){
+document.getElementById('st').textContent='連不到手機（確認手機 App 開著、在同一個 Wi-Fi）';});}
+api('status');setInterval(function(){api('status')},2000);
+</script></body></html>

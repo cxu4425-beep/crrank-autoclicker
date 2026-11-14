@@ -25,6 +25,22 @@
 > 手機請保持螢幕亮著、遊戲分頁在前景，否則瀏覽器會暫停計時。
 > 第一次執行時 Windows 防火牆若詢問，請按「允許」，手機才連得到。
 
+## Android App（APK）
+
+到 [Releases](../../releases) 下載 `CRRank-AutoHarvest.apk`（Android 7.0 以上），功能和電腦版相同：
+
+- **定點連點**：透過無障礙服務在螢幕座標點擊；全螢幕「🎯 選位置」；可拖動的浮動控制鈕（▶/■ 開始停止、🎯 選位置，等同 F9 / F8）；間隔、隨機誤差、次數上限、先點一次、測試點一下。
+- **手機 / 遙控**：App 內建區網伺服器，其他裝置掃 QR Code 即可遙控；書籤碼、使用者腳本、匯出檔案。
+- **內建遊戲**：App 內開啟知識領土並自動出現收成面板，不需要無障礙權限。
+
+安裝後到「開啟無障礙權限設定」開啟「CR Rank 自動收成（自動點擊）」。Android 13 以上若開關是灰色：設定 → 應用程式 → CR Rank 自動收成 → 右上角 ⋮ →「允許受限制的設定」。
+
+建置（只需 Android SDK + JDK，不用 Gradle）：
+
+```bash
+powershell -ExecutionPolicy Bypass -File android/build.ps1
+```
+
 ## 自行建置
 
 ```bash

@@ -5,13 +5,20 @@ try{var o=JSON.parse(localStorage.getItem(K)||'{}');for(var k in o)c[k]=o[k];}ca
 function save(){try{localStorage.setItem(K,JSON.stringify(c));}catch(e){}}
 var t=null,tick=null,n=0,next=0,last='';
 var p=document.createElement('div');
-p.style.cssText='position:fixed;z-index:2147483647;background:#1e2230;color:#fff;font:14px sans-serif;padding:10px;border-radius:12px;box-shadow:0 4px 18px rgba(0,0,0,.45);width:210px;touch-action:none;line-height:1.7';
+p.style.cssText='position:fixed;z-index:2147483647;background:#1e2230;color:#fff;font:14px sans-serif;padding:10px;border-radius:12px;box-shadow:0 4px 18px rgba(0,0,0,.45);width:220px;max-height:85vh;overflow:auto;touch-action:none;line-height:1.7';
 p.innerHTML='<div data-h style="font-weight:bold;cursor:move;user-select:none">&#9776; 自動收成<span data-x style="float:right;cursor:pointer;padding:0 4px">&#10005;</span></div>'+
 '<label>間隔(秒) <input data-iv type="number" min="1" style="width:80px;font-size:14px"></label><br>'+
 '<label><input type="radio" name="cracm" value="auto"> 自動找「收成」按鈕</label><br>'+
 '<label><input type="radio" name="cracm" value="pos"> 點自訂位置</label> <button data-pk style="font-size:13px">選位置</button><br>'+
 '<button data-go style="width:100%;margin-top:4px;padding:7px;font-size:15px;font-weight:bold;border:0;border-radius:8px;background:#ffc93c;color:#222">開始</button>'+
-'<div data-s style="font-size:12px;opacity:.85;margin-top:4px">未開始</div>';
+'<div data-s style="font-size:12px;opacity:.85;margin-top:4px">未開始</div>'+
+'<div style="border-top:1px solid #3a4052;margin-top:6px;padding-top:4px"><div data-bt style="font-weight:bold;cursor:pointer;user-select:none">&#128722; 自動購買 <span data-ba>&#9662;</span></div>'+
+'<div data-bb style="display:none"><div data-bl style="max-height:150px;overflow:auto;font-size:13px;margin:2px 0"></div>'+
+'<button data-br style="font-size:13px">讀取商品</button> <button data-b1 style="font-size:13px">立即買一次</button><br>'+
+'<label><input type="radio" name="cracb" value="restock"> 每次補貨後買</label><br>'+
+'<label><input type="radio" name="cracb" value="min"> 每 <input data-bm type="number" min="1" style="width:52px;font-size:14px"> 分鐘檢查</label><br>'+
+'<button data-bg style="width:100%;margin-top:4px;padding:6px;font-size:14px;font-weight:bold;border:0;border-radius:8px;background:#8fd3ff;color:#222">開始自動購買</button>'+
+'<div data-bs style="font-size:12px;opacity:.85;margin-top:4px">勾選要買的商品後按開始</div></div></div>';
 document.body.appendChild(p);
 var mk=document.createElement('div');
 mk.style.cssText='position:fixed;z-index:2147483646;width:22px;height:22px;margin:-11px 0 0 -11px;border:3px solid #ff3b5c;border-radius:50%;pointer-events:none;display:none';
@@ -47,5 +54,38 @@ var hd=q('data-h'),dx=0,dy=0,dr=false;
 hd.addEventListener('pointerdown',function(e){if(e.target.hasAttribute('data-x'))return;dr=true;dx=e.clientX-c.px;dy=e.clientY-c.py;hd.setPointerCapture(e.pointerId);});
 hd.addEventListener('pointermove',function(e){if(!dr)return;c.px=e.clientX-dx;c.py=e.clientY-dy;place();});
 hd.addEventListener('pointerup',function(){dr=false;save();});
+if(!c.buy)c.buy=[];if(!c.items)c.items=[];if(!c.bmode)c.bmode='restock';if(!c.bmin)c.bmin=10;
+var B={on:false,t:null,busy:false,log:'',next:0,at:0};
+function sleep(ms){return new Promise(function(r){setTimeout(r,ms);});}
+function shopDlg(){var ds=document.querySelectorAll('[role=dialog]');for(var i=0;i<ds.length;i++){var h=ds[i].querySelector('h1,h2,h3');if(h&&h.textContent.trim()=='商店')return ds[i];}return null;}
+function byText(sel,txt,root){var a=(root||document).querySelectorAll(sel);for(var i=0;i<a.length;i++){if(!p.contains(a[i])&&a[i].textContent.trim().indexOf(txt)==0)return a[i];}return null;}
+async function openShop(){var d=shopDlg();if(d)return{opened:false};var t0=byText('[role=tab]','商店');if(t0){t0.click();await sleep(700);if(shopDlg())return{opened:false};}var b=byText('button','物品');if(!b)return null;b.click();await sleep(800);var t=byText('[role=tab]','商店');if(t){t.click();await sleep(800);}return shopDlg()?{opened:true}:null;}
+function closeShop(){var d=shopDlg();if(!d)return;var x=d.querySelector('button[title^="關閉"],button[aria-label^="關閉"]');if(x)x.click();}
+function cards(){var d=shopDlg(),out=[];if(!d)return out;var bs=d.querySelectorAll('button');for(var i=0;i<bs.length;i++){if(bs[i].textContent.trim()!='購買')continue;var li=bs[i].closest('li');var q=li&&li.querySelector('p');if(!q)continue;var nm='';for(var j=0;j<q.childNodes.length;j++){if(q.childNodes[j].nodeType==3)nm+=q.childNodes[j].textContent;}nm=nm.trim();var m=/庫存\s*[×x]\s*(\d+)/.exec(li.textContent);if(nm)out.push({name:nm,btn:bs[i],stock:m?+m[1]:1});}return out;}
+function findCard(nm){var cs=cards();for(var i=0;i<cs.length;i++){if(cs[i].name==nm)return cs[i];}return null;}
+async function eachCat(fn){var d=shopDlg();var tl=d&&(d.querySelector('[role=tablist][aria-label="商店分類"]')||d.querySelectorAll('[role=tablist]')[1]);var n=tl?tl.querySelectorAll('[role=tab]').length:0;if(!n){await fn();return;}
+for(var i=0;i<n;i++){d=shopDlg();if(!d)return;tl=d.querySelector('[role=tablist][aria-label="商店分類"]')||d.querySelectorAll('[role=tablist]')[1];if(!tl)return;tl.querySelectorAll('[role=tab]')[i].click();await sleep(700);await fn();}}
+function restockAt(){var d=shopDlg();var m=d&&/下次補貨\s*(\d+(?::\d+)+)/.exec(d.textContent);if(!m)return 0;var s=0,a=m[1].split(':');for(var i=0;i<a.length;i++)s=s*60+(+a[i]);return Date.now()+s*1000+5000;}
+async function buyRun(){if(B.busy)return;B.busy=true;bupd();var got=[];try{var o=await openShop();if(!o){B.log='打不開商店（先關掉其他視窗）';return;}
+await eachCat(async function(){var cs=cards();for(var i=0;i<cs.length;i++){var nm=cs[i].name;if(c.buy.indexOf(nm)<0)continue;var k=0,cap=Math.max(1,cs[i].stock);
+while(k<cap){var cd=findCard(nm);if(!cd||cd.btn.disabled)break;cd.btn.click();k++;await sleep(1000);}if(k)got.push(nm+' ×'+k);}});
+B.next=restockAt();if(o.opened)closeShop();B.log=got.length?'買到 '+got.join('、'):'沒有可買的（缺貨或已買完）';}
+catch(e){B.log='錯誤：'+e.message;}finally{B.busy=false;bupd();}}
+async function scanItems(){if(B.busy)return;B.busy=true;B.log='讀取中…';bupd();try{var o=await openShop();if(!o){B.log='打不開商店';return;}var names=[];
+await eachCat(async function(){var cs=cards();for(var i=0;i<cs.length;i++)if(names.indexOf(cs[i].name)<0)names.push(cs[i].name);});
+B.next=restockAt();if(o.opened)closeShop();if(names.length){c.items=names;save();}B.log='讀到 '+names.length+' 樣商品';}catch(e){B.log='錯誤：'+e.message;}finally{B.busy=false;renderList();bupd();}}
+function renderList(){var l=q('data-bl');l.innerHTML='';if(!c.items.length){l.textContent='按「讀取商品」載入商店清單';return;}
+c.items.forEach(function(nm){var lb=document.createElement('label');lb.style.display='block';var cb=document.createElement('input');cb.type='checkbox';cb.checked=c.buy.indexOf(nm)>=0;
+cb.onchange=function(){var i=c.buy.indexOf(nm);if(cb.checked&&i<0)c.buy.push(nm);if(!cb.checked&&i>=0)c.buy.splice(i,1);save();};lb.appendChild(cb);lb.appendChild(document.createTextNode(' '+nm));l.appendChild(lb);});}
+function bsched(){clearTimeout(B.t);if(!B.on)return;var ms=(c.bmode=='restock'&&B.next>Date.now())?B.next-Date.now():c.bmin*60000;B.at=Date.now()+ms;
+B.t=setTimeout(function(){buyRun().then(bsched);},ms);bupd();}
+function bupd(){var g=q('data-bg');g.textContent=B.on?'停止自動購買':'開始自動購買';g.style.background=B.on?'#ff6b6b':'#8fd3ff';
+var s=Math.max(0,Math.ceil((B.at-Date.now())/1000));q('data-bs').textContent=(B.busy?'購買中…':B.on?'執行中 · 下次 '+Math.floor(s/60)+':'+('0'+s%60).slice(-2):'已停止')+(B.log?' · '+B.log:'');}
+q('data-bt').onclick=function(){var bb=q('data-bb'),o=bb.style.display=='none';bb.style.display=o?'':'none';q('data-ba').innerHTML=o?'&#9652;':'&#9662;';};
+q('data-br').onclick=scanItems;q('data-b1').onclick=function(){buyRun();};
+var bm=q('data-bm');bm.value=c.bmin;bm.onchange=function(){c.bmin=Math.max(1,parseFloat(bm.value)||10);bm.value=c.bmin;save();if(B.on)bsched();};
+var brs=p.querySelectorAll('input[name=cracb]');for(var bi=0;bi<brs.length;bi++){(function(r){r.checked=r.value==c.bmode;r.onchange=function(){c.bmode=r.value;save();if(B.on)bsched();};})(brs[bi]);}
+q('data-bg').onclick=function(){if(B.on){B.on=false;clearTimeout(B.t);bupd();return;}if(!c.buy.length){B.log='先勾選要買的商品';bupd();return;}B.on=true;buyRun().then(bsched);};
+setInterval(function(){if(B.on||B.busy)bupd();},1000);renderList();bupd();
 window.__crac={show:function(){p.style.display='';showMk();}};
 })();

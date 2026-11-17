@@ -17,7 +17,7 @@ Write-Host "1/6 編譯資源"
 Run "$bt\aapt2.exe" @("compile", "--dir", "$here\res", "-o", "$out\res.zip")
 Run "$bt\aapt2.exe" @("link", "-o", "$out\base.apk", "-I", $jar, "--manifest", "$here\AndroidManifest.xml",
     "-A", "$here\assets", "--java", "$out\gen", "--min-sdk-version", "24", "--target-sdk-version", "34",
-    "--version-code", "3", "--version-name", "1.2", "$out\res.zip")
+    "--version-code", "4", "--version-name", "1.3", "$out\res.zip")
 
 Write-Host "2/6 編譯 Java"
 $srcs = @(Get-ChildItem -Recurse "$here\src", "$out\gen" -Filter *.java | ForEach-Object FullName)

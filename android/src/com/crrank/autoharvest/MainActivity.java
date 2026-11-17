@@ -155,6 +155,31 @@ public class MainActivity extends Activity {
 
     // ---------- 分頁 2：自動購買（對應電腦版「自動購買」） ----------
     private LinearLayout stepsBox;
+    private Spinner slotSp;
+    private CheckBox cbrot;
+    private TextView savedTxt;
+    private long seenSaved;
+
+    private void renderSlots() {
+        String[] names = new String[e.slots.size()];
+        for (int i = 0; i < names.length; i++)
+            names[i] = e.slots.get(i).name + "（" + e.slots.get(i).steps.size() + " 步）";
+        slotSp.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, names));
+        slotSp.setSelection(e.slot);
+    }
+
+    private void renameSlot() {
+        EditText n = new EditText(this);
+        n.setText(e.curSlot().name);
+        new AlertDialog.Builder(this).setTitle("存檔名稱").setView(n).setPositiveButton("儲存", (d, w) -> {
+            String s = n.getText().toString().trim();
+            if (!s.isEmpty()) {
+                e.curSlot().name = s;
+                e.saveBuy();
+                renderSteps();
+            }
+        }).setNegativeButton("取消", null).show();
+    }
     private EditText eboff, ebevery;
     private android.widget.RadioButton rbRestock, rbEvery;
     private CheckBox cbnow;
@@ -164,7 +189,48 @@ public class MainActivity extends Activity {
     private View buildBuyTab() {
         LinearLayout p = page();
         p.addView(label("自動購買（照順序模擬點擊）", 16, true));
-        p.addView(hint("按「建立購買範本」→ 先打開遊戲的「物品 → 商店」確認位置 → 按「依序選全部」把每一步點在對應按鈕上。要買多樣商品就多加幾個「購買」步驟。"));
+        p.addView(hint("按「建立購買範本」→ 先打開遊戲的「物品 → 商店」確認位置 → 按「依序選全部」把每一步點在對應按鈕上。商品在下面看不到時，在「購買」前加一個「滾動步驟」。"));
+
+        slotSp = new Spinner(this);
+        slotSp.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(android.widget.AdapterView<?> a, View v, int pos, long id) {
+                if (pos != e.slot) {
+                    e.switchSlot(pos);
+                    e.saveBuy();
+                    renderSteps();
+                }
+            }
+
+            @Override
+            public void onNothingSelected(android.widget.AdapterView<?> a) {
+            }
+        });
+        LinearLayout sr = row(label("存檔 ", 15, true));
+        sr.addView(slotSp, new LinearLayout.LayoutParams(0, -2, 1));
+        sr.addView(btn("改名", v -> renameSlot()));
+        sr.addView(btn("清空", v -> {
+            if (e.steps.isEmpty()) return;
+            new AlertDialog.Builder(this).setMessage("確定要清空「" + e.curSlot().name + "」的所有步驟嗎？")
+                    .setPositiveButton("清空", (d, w) -> {
+                        e.steps.clear();
+                        e.saveBuy();
+                        renderSteps();
+                    }).setNegativeButton("取消", null).show();
+        }));
+        p.addView(sr);
+        cbrot = new CheckBox(this);
+        cbrot.setText("自動輪播（做完一個存檔接下一個）");
+        cbrot.setOnCheckedChangeListener((v, on) -> {
+            if (e.buyRotate != on) {
+                e.buyRotate = on;
+                e.saveBuy();
+            }
+        });
+        p.addView(cbrot);
+        savedTxt = hint("");
+        savedTxt.setTextColor(0xFF2A8A2A);
+        p.addView(savedTxt);
         stepsBox = new LinearLayout(this);
         stepsBox.setOrientation(LinearLayout.VERTICAL);
         p.addView(stepsBox);
@@ -172,7 +238,7 @@ public class MainActivity extends Activity {
             if (e.steps.isEmpty()) makeTemplate();
             else new AlertDialog.Builder(this).setMessage("要用範本取代目前的步驟嗎？")
                     .setPositiveButton("取代", (d, w) -> makeTemplate()).setNegativeButton("取消", null).show();
-        }), btn("➕ 新增步驟", v -> {
+        }), btn("➕ 點擊步驟", v -> {
             Engine.Step s = new Engine.Step();
             s.name = "點「購買」";
             s.times = 3;
@@ -180,6 +246,16 @@ public class MainActivity extends Activity {
             e.saveBuy();
             renderSteps();
         })));
+        p.addView(btn("➕ 滾動步驟（捲動商品清單）", v -> {
+            Engine.Step s = new Engine.Step();
+            s.name = "滾動商品清單";
+            s.type = "scroll";
+            s.wait = 0.8;
+            e.steps.add(s);
+            e.saveBuy();
+            renderSteps();
+            Toast.makeText(this, "已加在最後，可用 ↑ 移到「購買」前面；位置要選在商品清單上", Toast.LENGTH_LONG).show();
+        }));
         p.addView(btn("🎯 依序選全部位置", v -> pickSteps(0, true)));
         p.addView(sep());
 
@@ -228,6 +304,7 @@ public class MainActivity extends Activity {
 
     private void renderSteps() {
         if (stepsBox == null) return;
+        renderSlots();
         stepsBox.removeAllViews();
         if (e.steps.isEmpty()) {
             stepsBox.addView(hint("還沒有步驟。"));
@@ -246,7 +323,8 @@ public class MainActivity extends Activity {
             LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(-1, -2);
             cp.setMargins(0, dp(3), 0, dp(3));
             String pos = s.x == null ? "（未選位置）" : "(" + s.x + ", " + s.y + ")";
-            card.addView(label((i + 1) + ". " + s.name + "  " + pos + "\n點 " + s.times + " 次，點完等 " + Engine.fmt(s.wait) + " 秒", 14, false));
+            card.addView(label((i + 1) + ". " + s.name + "  " + pos + "\n" + s.action() + " × " + s.times
+                    + " 次，做完等 " + Engine.fmt(s.wait) + " 秒", 14, false));
             LinearLayout r = row();
             Button pk = btn("🎯", v -> pickSteps(k, false));
             Button ed = btn("編輯", v -> editStep(k));
@@ -279,14 +357,28 @@ public class MainActivity extends Activity {
         w.setText(Engine.fmt(s.wait));
         l.addView(label("名稱", 14, false));
         l.addView(n);
-        l.addView(row(label("點幾次  ", 14, false), t));
-        l.addView(row(label("點完等幾秒  ", 14, false), w));
+        Spinner ty = new Spinner(this);
+        ty.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, new String[]{"點擊", "滾動"}));
+        ty.setSelection(s.isScroll() ? 1 : 0);
+        Spinner dr = new Spinner(this);
+        dr.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, new String[]{"往下", "往上"}));
+        dr.setSelection("up".equals(s.dir) ? 1 : 0);
+        EditText am = num(false);
+        am.setText(String.valueOf(s.amount));
+        l.addView(row(label("動作  ", 14, false), ty));
+        l.addView(row(label("重複幾次  ", 14, false), t));
+        l.addView(row(label("做完等幾秒  ", 14, false), w));
+        l.addView(row(label("滾動方向  ", 14, false), dr));
+        l.addView(row(label("滾動格數  ", 14, false), am));
         new AlertDialog.Builder(this).setTitle("編輯第 " + (k + 1) + " 步").setView(l)
                 .setPositiveButton("儲存", (d, x) -> {
                     try {
                         s.name = n.getText().toString().trim().isEmpty() ? s.name : n.getText().toString().trim();
                         s.times = Math.max(1, (int) Double.parseDouble(t.getText().toString()));
                         s.wait = Math.max(0.1, Double.parseDouble(w.getText().toString()));
+                        s.type = ty.getSelectedItemPosition() == 1 ? "scroll" : "click";
+                        s.dir = dr.getSelectedItemPosition() == 1 ? "up" : "down";
+                        s.amount = Math.max(1, (int) Double.parseDouble(am.getText().toString()));
                     } catch (Exception ex) {
                         Toast.makeText(this, "次數和秒數要是數字", Toast.LENGTH_SHORT).show();
                     }
@@ -330,6 +422,7 @@ public class MainActivity extends Activity {
         eboff.setText(Engine.fmt(e.buyOffset));
         ebevery.setText(Engine.fmt(e.buyEvery));
         cbnow.setChecked(e.buyNow);
+        cbrot.setChecked(e.buyRotate);
         renderSteps();
     }
 
@@ -591,7 +684,15 @@ public class MainActivity extends Activity {
             bgo.getBackground().setTint(e.buyRunning ? 0xFFFF6B6B : 0xFF8FD3FF);
             bstatus.setText(e.buyStatus());
             StringBuilder sig = new StringBuilder();
-            for (Engine.Step s : e.steps) sig.append(s.name).append(s.x).append(',').append(s.y).append(s.times).append(s.wait).append(';');
+            sig.append(e.slot).append('|');
+            for (Engine.Slot sl : e.slots) sig.append(sl.name).append(sl.steps.size()).append('|');
+            for (Engine.Step s : e.steps) sig.append(s.name).append(s.x).append(',').append(s.y).append(s.times).append(s.wait)
+                    .append(s.type).append(s.dir).append(s.amount).append(';');
+            if (e.lastSaved != seenSaved) {
+                seenSaved = e.lastSaved;
+                savedTxt.setText("✔ 已自動存檔到「" + e.curSlot().name + "」 "
+                        + new java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US).format(new java.util.Date(e.lastSaved)));
+            }
             if (!sig.toString().equals(stepsSig)) {
                 stepsSig = sig.toString();
                 renderSteps();

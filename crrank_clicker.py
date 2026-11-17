@@ -57,6 +57,24 @@ def click_at(x, y, restore=True):
             user32.SetCursorPos(*old)
 
 
+MOUSEEVENTF_WHEEL = 0x0800
+
+
+def scroll_at(x, y, down=True, notches=3, restore=True):
+    """把滑鼠移到 (x, y) 轉滾輪；down=True 往下捲。"""
+    with CLICK_LOCK:
+        old = get_cursor()
+        user32.SetCursorPos(int(x), int(y))
+        time.sleep(0.05)
+        delta = -120 if down else 120
+        for _ in range(max(1, int(notches))):
+            user32.mouse_event(MOUSEEVENTF_WHEEL, 0, 0, delta, 0)
+            time.sleep(0.06)
+        if restore:
+            time.sleep(0.03)
+            user32.SetCursorPos(*old)
+
+
 def app_dir():
     if getattr(sys, "frozen", False):
         return os.path.dirname(sys.executable)
@@ -66,7 +84,20 @@ def app_dir():
 SETTINGS_FILE = os.path.join(app_dir(), "crrank_clicker_settings.json")
 DEFAULTS = {"x": 0, "y": 0, "interval": 60, "unit": "秒", "jitter": 0,
             "limit": 0, "restore": True, "click_now": True, "port": 8765,
-            "buy_steps": [], "buy_mode": "restock", "buy_every": 30, "buy_offset": 10, "buy_now": True}
+            "buy_mode": "restock", "buy_every": 30, "buy_offset": 10, "buy_now": True,
+            "buy_slot": 0, "buy_rotate": False}
+NUM_SLOTS = 3
+
+
+def default_slots():
+    return [{"name": f"存檔{i + 1}", "steps": []} for i in range(NUM_SLOTS)]
+
+
+def step_action(st):
+    """步驟在列表上顯示的動作文字"""
+    if st.get("type") == "scroll":
+        return f"滾動{'↓' if st.get('dir', 'down') == 'down' else '↑'}{st.get('amount', 3)}格"
+    return "點擊"
 UNIT_SEC = {"秒": 1, "分": 60, "時": 3600}
 RESTOCK_SEC = 1800  # 商店每 30 分鐘（整點、半點）全服補貨
 
@@ -82,6 +113,18 @@ def load_settings():
             s.update(json.load(f))
     except Exception:
         pass
+    # 存檔：舊版的 buy_steps 搬到「存檔1」
+    slots = s.get("buy_slots")
+    if not isinstance(slots, list) or not slots:
+        slots = default_slots()
+        if s.get("buy_steps"):
+            slots[0]["steps"] = s["buy_steps"]
+    while len(slots) < NUM_SLOTS:
+        slots.append({"name": f"存檔{len(slots) + 1}", "steps": []})
+    s["buy_slots"] = slots
+    s.pop("buy_steps", None)
+    if not (0 <= int(s.get("buy_slot", 0)) < len(slots)):
+        s["buy_slot"] = 0
     return s
 
 
@@ -392,24 +435,44 @@ class BuyRunner:
     def run_once(self, check_stop=False):
         if self.busy:
             return
-        steps = [st for st in self.s.get("buy_steps", []) if st.get("x") is not None]
-        if not steps:
+        slots = self.s.get("buy_slots") or []
+
+        def ready(sl):
+            return [st for st in sl.get("steps", []) if st.get("x") is not None]
+
+        if self.s.get("buy_rotate"):  # 自動輪播：存檔1 做完接存檔2、存檔3…
+            order = [sl for sl in slots if ready(sl)]
+        else:
+            cur = slots[int(self.s.get("buy_slot", 0))] if slots else {"steps": []}
+            order = [cur] if ready(cur) else []
+        if not order:
             self.log = "沒有設定好位置的步驟"
+            self.on_change()
             return
         self.busy = True
         self.on_change()
+        restore = self.s.get("restore", True)
         try:
-            for st in steps:
-                for i in range(max(1, int(st.get("times", 1)))):
-                    if check_stop and self.stop_evt.is_set():
-                        self.log = "已中途停止"
-                        return
-                    click_at(st["x"], st["y"], self.s.get("restore", True))
-                    if i < int(st.get("times", 1)) - 1:
-                        time.sleep(1.0)
-                time.sleep(max(0.1, float(st.get("wait", 1.0))))
+            done = []
+            for sl in order:
+                self.current = sl.get("name", "")
+                self.on_change()
+                for st in ready(sl):
+                    times = max(1, int(st.get("times", 1)))
+                    for i in range(times):
+                        if check_stop and self.stop_evt.is_set():
+                            self.log = "已中途停止"
+                            return
+                        if st.get("type") == "scroll":
+                            scroll_at(st["x"], st["y"], st.get("dir", "down") == "down", st.get("amount", 3), restore)
+                        else:
+                            click_at(st["x"], st["y"], restore)
+                        if i < times - 1:
+                            time.sleep(1.0)
+                    time.sleep(max(0.1, float(st.get("wait", 1.0))))
+                done.append(sl.get("name", ""))
             self.runs += 1
-            self.log = time.strftime("%H:%M:%S") + " 已執行購買"
+            self.log = time.strftime("%H:%M:%S") + " 已執行 " + "→".join(done)
         finally:
             self.busy = False
             self.on_change()
@@ -440,7 +503,7 @@ class BuyRunner:
 
     def status(self):
         if self.busy:
-            return "購買中…"
+            return f"購買中…（{getattr(self, 'current', '')}）"
         if not self.running:
             return "已停止" + (f" · {self.log}" if self.log else "")
         s = max(0, int(self.next_at - time.time()))
@@ -702,83 +765,174 @@ class App:
     # ----- 自動購買分頁 -----
     def build_buy_tab(self, f):
         f.columnconfigure(1, weight=1)
-        ttk.Label(f, text="自動購買（照順序模擬點擊）", font=("Microsoft JhengHei UI", 10, "bold")).grid(row=0, column=0, columnspan=4, sticky="w")
-        cols = ("n", "name", "x", "y", "times", "wait")
+        head = ttk.Frame(f)
+        head.grid(row=0, column=0, columnspan=4, sticky="we")
+        ttk.Label(head, text="自動購買（照順序模擬點擊）", font=("Microsoft JhengHei UI", 10, "bold")).pack(side="left")
+        self.saved_lbl = ttk.Label(head, text="", foreground="#2a8a2a")
+        self.saved_lbl.pack(side="right")
+        sr = ttk.Frame(f)
+        sr.grid(row=1, column=0, columnspan=4, sticky="we", pady=(2, 0))
+        ttk.Label(sr, text="存檔").pack(side="left")
+        self.vslot = tk.StringVar()
+        self.slot_cb = ttk.Combobox(sr, textvariable=self.vslot, state="readonly", width=12)
+        self.slot_cb.pack(side="left", padx=4)
+        self.slot_cb.bind("<<ComboboxSelected>>", lambda e: self.switch_slot(self.slot_cb.current()))
+        ttk.Button(sr, text="改名", width=5, command=self.rename_slot).pack(side="left")
+        ttk.Button(sr, text="清空", width=5, command=self.clear_slot).pack(side="left", padx=2)
+        self.vrot = tk.BooleanVar(value=self.s.get("buy_rotate", False))
+        ttk.Checkbutton(sr, text="自動輪播（做完一個存檔接下一個）", variable=self.vrot,
+                        command=self.set_rotate).pack(side="left", padx=(6, 0))
+
+        cols = ("n", "name", "act", "x", "y", "times", "wait")
         tv = ttk.Treeview(f, columns=cols, show="headings", height=6, selectmode="browse")
-        for c, t, w in zip(cols, ("#", "步驟", "X", "Y", "次數", "等待秒"), (28, 190, 52, 52, 40, 52)):
+        for c, t, w in zip(cols, ("#", "步驟", "動作", "X", "Y", "次數", "等待秒"), (28, 160, 70, 50, 50, 40, 50)):
             tv.heading(c, text=t)
             tv.column(c, width=w, anchor="w" if c == "name" else "center", stretch=(c == "name"))
-        tv.grid(row=1, column=0, columnspan=4, sticky="nsew", pady=(4, 4))
+        tv.grid(row=2, column=0, columnspan=4, sticky="nsew", pady=(4, 4))
         tv.bind("<<TreeviewSelect>>", lambda e: self.load_step())
         self.tv = tv
 
         ed = ttk.Frame(f)
-        ed.grid(row=2, column=0, columnspan=4, sticky="we")
+        ed.grid(row=3, column=0, columnspan=4, sticky="we")
         self.st_name = tk.StringVar()
         self.st_times = tk.StringVar(value="1")
         self.st_wait = tk.StringVar(value="1")
+        self.st_type = tk.StringVar(value="點擊")
+        self.st_dir = tk.StringVar(value="往下")
+        self.st_amount = tk.StringVar(value="3")
         ttk.Label(ed, text="名稱").pack(side="left")
-        ttk.Entry(ed, textvariable=self.st_name, width=16).pack(side="left", padx=(2, 6))
-        ttk.Label(ed, text="點").pack(side="left")
-        ttk.Entry(ed, textvariable=self.st_times, width=3).pack(side="left")
-        ttk.Label(ed, text="次 等").pack(side="left")
-        ttk.Entry(ed, textvariable=self.st_wait, width=4).pack(side="left")
+        e1 = ttk.Entry(ed, textvariable=self.st_name, width=14)
+        e1.pack(side="left", padx=(2, 6))
+        ttk.Label(ed, text="重複").pack(side="left")
+        e2 = ttk.Entry(ed, textvariable=self.st_times, width=3)
+        e2.pack(side="left")
+        ttk.Label(ed, text="次 做完等").pack(side="left")
+        e3 = ttk.Entry(ed, textvariable=self.st_wait, width=4)
+        e3.pack(side="left")
         ttk.Label(ed, text="秒").pack(side="left")
-        ttk.Button(ed, text="套用", width=5, command=self.apply_step).pack(side="left", padx=4)
+        ed2 = ttk.Frame(f)
+        ed2.grid(row=4, column=0, columnspan=4, sticky="we", pady=(2, 0))
+        ttk.Label(ed2, text="動作").pack(side="left")
+        c1 = ttk.Combobox(ed2, textvariable=self.st_type, values=("點擊", "滾動"), state="readonly", width=5)
+        c1.pack(side="left", padx=(2, 6))
+        ttk.Label(ed2, text="滾動方向").pack(side="left")
+        c2 = ttk.Combobox(ed2, textvariable=self.st_dir, values=("往下", "往上"), state="readonly", width=5)
+        c2.pack(side="left", padx=2)
+        e4 = ttk.Entry(ed2, textvariable=self.st_amount, width=3)
+        e4.pack(side="left")
+        ttk.Label(ed2, text="格").pack(side="left")
+        ttk.Button(ed2, text="套用", width=5, command=self.apply_step).pack(side="left", padx=6)
+        for w in (e1, e2, e3, e4):  # 改完自動套用＋自動存檔
+            w.bind("<Return>", lambda e: self.apply_step())
+            w.bind("<FocusOut>", lambda e: self.apply_step(quiet=True))
+        for w in (c1, c2):
+            w.bind("<<ComboboxSelected>>", lambda e: self.apply_step())
 
         b1 = ttk.Frame(f)
-        b1.grid(row=3, column=0, columnspan=4, sticky="we", pady=(4, 0))
-        for i, (t, cmd) in enumerate((("📋 建立購買範本", self.buy_template), ("➕ 新增步驟", self.add_step),
-                                      ("🗑 刪除", self.del_step))):
+        b1.grid(row=5, column=0, columnspan=4, sticky="we", pady=(4, 0))
+        for i, (t, cmd) in enumerate((("📋 建立購買範本", self.buy_template), ("➕ 點擊步驟", self.add_step),
+                                      ("➕ 滾動步驟", self.add_scroll), ("🗑 刪除", self.del_step))):
             ttk.Button(b1, text=t, command=cmd).grid(row=0, column=i, sticky="we", padx=1)
             b1.columnconfigure(i, weight=1)
         b2 = ttk.Frame(f)
-        b2.grid(row=4, column=0, columnspan=4, sticky="we")
+        b2.grid(row=6, column=0, columnspan=4, sticky="we")
         for i, (t, cmd) in enumerate((("🎯 選位置", self.pick_step), ("🎯 依序選全部", self.pick_all),
                                       ("↑", lambda: self.move_step(-1)), ("↓", lambda: self.move_step(1)))):
             ttk.Button(b2, text=t, command=cmd).grid(row=0, column=i, sticky="we", padx=1)
             b2.columnconfigure(i, weight=1 if i < 2 else 0)
-        ttk.Label(f, text="選中步驟後，把滑鼠移到目標上按 F8 也能記錄位置", foreground="#666").grid(row=5, column=0, columnspan=4, sticky="w")
+        ttk.Label(f, text="選中步驟後，把滑鼠移到目標上按 F8 也能記錄位置；滾動步驟的位置＝要捲的清單上",
+                  foreground="#666", wraplength=420).grid(row=7, column=0, columnspan=4, sticky="w")
 
-        ttk.Separator(f).grid(row=6, column=0, columnspan=4, sticky="we", pady=6)
+        ttk.Separator(f).grid(row=8, column=0, columnspan=4, sticky="we", pady=6)
         self.vbmode = tk.StringVar(value=self.s.get("buy_mode", "restock"))
         self.vboff = tk.StringVar(value=str(self.s.get("buy_offset", 10)))
         self.vbevery = tk.StringVar(value=str(self.s.get("buy_every", 30)))
         r1 = ttk.Frame(f)
-        r1.grid(row=7, column=0, columnspan=4, sticky="w")
+        r1.grid(row=9, column=0, columnspan=4, sticky="w")
         ttk.Radiobutton(r1, text="每次補貨後（整點、半點）過", variable=self.vbmode, value="restock").pack(side="left")
         ttk.Entry(r1, textvariable=self.vboff, width=4).pack(side="left")
         ttk.Label(r1, text="秒").pack(side="left")
         r2 = ttk.Frame(f)
-        r2.grid(row=8, column=0, columnspan=4, sticky="w")
+        r2.grid(row=10, column=0, columnspan=4, sticky="w")
         ttk.Radiobutton(r2, text="每", variable=self.vbmode, value="interval").pack(side="left")
         ttk.Entry(r2, textvariable=self.vbevery, width=5).pack(side="left")
         ttk.Label(r2, text="分鐘").pack(side="left")
         self.vbnow = tk.BooleanVar(value=self.s.get("buy_now", True))
-        ttk.Checkbutton(f, text="按開始時立刻先買一次", variable=self.vbnow).grid(row=9, column=0, columnspan=4, sticky="w")
+        ttk.Checkbutton(f, text="按開始時立刻先買一次", variable=self.vbnow).grid(row=11, column=0, columnspan=4, sticky="w")
         self.bbtn = tk.Button(f, text="▶ 開始自動購買 (F10)", font=("Microsoft JhengHei UI", 12, "bold"), bg="#8fd3ff",
                               relief="flat", command=self.toggle_buy)
-        self.bbtn.grid(row=10, column=0, columnspan=4, sticky="we", pady=(8, 2))
-        ttk.Button(f, text="立即買一次（測試）", command=self.buy_once).grid(row=11, column=0, columnspan=4, sticky="we")
-        self.bstatus = ttk.Label(f, text="已停止", wraplength=380)
-        self.bstatus.grid(row=12, column=0, columnspan=4, sticky="w", pady=(4, 0))
-        ttk.Label(f, foreground="#666", wraplength=380, justify="left", text=(
+        self.bbtn.grid(row=12, column=0, columnspan=4, sticky="we", pady=(8, 2))
+        ttk.Button(f, text="立即買一次（測試）", command=self.buy_once).grid(row=13, column=0, columnspan=4, sticky="we")
+        self.bstatus = ttk.Label(f, text="已停止", wraplength=420)
+        self.bstatus.grid(row=14, column=0, columnspan=4, sticky="w", pady=(4, 0))
+        ttk.Label(f, foreground="#666", wraplength=420, justify="left", text=(
             "用法：按「建立購買範本」→ 先在瀏覽器打開商店確認位置，再按「依序選全部」把每一步點在對應按鈕上。"
-            "要買多樣商品就多加幾個「購買」步驟。開始前「物品」視窗要先關著，遊戲畫面不要被擋住。")).grid(row=13, column=0, columnspan=4, sticky="w", pady=(4, 0))
+            "商品在下面看不到時，在「購買」前加一個「滾動步驟」。開始前「物品」視窗要先關著，遊戲畫面不要被擋住。"
+            "步驟會自動存到目前的存檔。")).grid(row=15, column=0, columnspan=4, sticky="w", pady=(4, 0))
+        self.refresh_slots()
         self.refresh_steps()
 
+    # ----- 存檔 -----
+    def slots(self):
+        return self.s["buy_slots"]
+
+    def cur_slot(self):
+        return self.slots()[int(self.s.get("buy_slot", 0))]
+
+    def autosave(self):
+        save_settings(self.s)
+        if hasattr(self, "saved_lbl"):
+            self.saved_lbl.config(text=f"✔ 已自動存檔到「{self.cur_slot()['name']}」 {time.strftime('%H:%M:%S')}")
+
+    def refresh_slots(self):
+        names = [f"{sl['name']}（{len(sl.get('steps', []))} 步）" for sl in self.slots()]
+        self.slot_cb.config(values=names)
+        self.slot_cb.current(int(self.s.get("buy_slot", 0)))
+
+    def switch_slot(self, i):
+        if i < 0:
+            return
+        self.s["buy_slot"] = i
+        self.autosave()
+        self.refresh_slots()
+        self.refresh_steps(0 if self.steps() else None)
+
+    def rename_slot(self):
+        from tkinter import simpledialog
+        sl = self.cur_slot()
+        n = simpledialog.askstring(APP_NAME, "存檔名稱：", initialvalue=sl["name"], parent=self.root)
+        if n and n.strip():
+            sl["name"] = n.strip()
+            self.autosave()
+            self.refresh_slots()
+
+    def clear_slot(self):
+        sl = self.cur_slot()
+        if sl.get("steps") and messagebox.askyesno(APP_NAME, f"確定要清空「{sl['name']}」的所有步驟嗎？"):
+            sl["steps"] = []
+            self.autosave()
+            self.refresh_slots()
+            self.refresh_steps()
+
+    def set_rotate(self):
+        self.s["buy_rotate"] = bool(self.vrot.get())
+        self.autosave()
+
     def steps(self):
-        return self.s.setdefault("buy_steps", [])
+        return self.cur_slot().setdefault("steps", [])
 
     def refresh_steps(self, select=None):
         self.tv.delete(*self.tv.get_children())
         for i, st in enumerate(self.steps()):
             x = "—" if st.get("x") is None else st["x"]
             y = "—" if st.get("y") is None else st["y"]
-            self.tv.insert("", "end", iid=str(i), values=(i + 1, st["name"], x, y, st.get("times", 1), st.get("wait", 1)))
+            self.tv.insert("", "end", iid=str(i), values=(i + 1, st["name"], step_action(st), x, y,
+                                                          st.get("times", 1), st.get("wait", 1)))
         if select is not None and 0 <= select < len(self.steps()):
             self.tv.selection_set(str(select))
             self.tv.see(str(select))
+        if hasattr(self, "slot_cb"):
+            self.refresh_slots()
 
     def sel_index(self):
         sel = self.tv.selection()
@@ -792,33 +946,52 @@ class App:
         self.st_name.set(st["name"])
         self.st_times.set(str(st.get("times", 1)))
         self.st_wait.set(str(st.get("wait", 1)))
+        self.st_type.set("滾動" if st.get("type") == "scroll" else "點擊")
+        self.st_dir.set("往上" if st.get("dir") == "up" else "往下")
+        self.st_amount.set(str(st.get("amount", 3)))
 
-    def apply_step(self):
+    def apply_step(self, quiet=False):
         i = self.sel_index()
         if i is None:
             return
         try:
             times = max(1, int(float(self.st_times.get())))
             wait = max(0.1, float(self.st_wait.get()))
+            amount = max(1, int(float(self.st_amount.get() or 3)))
         except ValueError:
-            messagebox.showerror(APP_NAME, "次數和等待秒數要是數字")
+            if not quiet:
+                messagebox.showerror(APP_NAME, "次數、秒數、格數要是數字")
             return
         st = self.steps()[i]
-        st.update(name=self.st_name.get().strip() or st["name"], times=times, wait=wait)
-        save_settings(self.s)
+        new = dict(name=self.st_name.get().strip() or st["name"], times=times, wait=wait,
+                   type="scroll" if self.st_type.get() == "滾動" else "click",
+                   dir="up" if self.st_dir.get() == "往上" else "down", amount=amount)
+        if all(st.get(k) == v for k, v in new.items()):
+            return
+        st.update(new)
+        self.autosave()
         self.refresh_steps(i)
 
     def add_step(self):
-        self.steps().append({"name": "點「購買」", "x": None, "y": None, "times": 3, "wait": 1.0})
-        save_settings(self.s)
+        self.steps().append({"name": "點「購買」", "type": "click", "x": None, "y": None, "times": 3, "wait": 1.0})
+        self.autosave()
         self.refresh_steps(len(self.steps()) - 1)
+
+    def add_scroll(self):
+        i = self.sel_index()
+        st = {"name": "滾動商品清單", "type": "scroll", "dir": "down", "amount": 3,
+              "x": None, "y": None, "times": 1, "wait": 0.8}
+        pos = len(self.steps()) if i is None else i + 1  # 插在選中步驟後面
+        self.steps().insert(pos, st)
+        self.autosave()
+        self.refresh_steps(pos)
 
     def del_step(self):
         i = self.sel_index()
         if i is None:
             return
         del self.steps()[i]
-        save_settings(self.s)
+        self.autosave()
         self.refresh_steps(min(i, len(self.steps()) - 1))
 
     def move_step(self, d):
@@ -827,14 +1000,15 @@ class App:
         if i is None or not (0 <= i + d < len(st)):
             return
         st[i], st[i + d] = st[i + d], st[i]
-        save_settings(self.s)
+        self.autosave()
         self.refresh_steps(i + d)
 
     def buy_template(self):
-        if self.steps() and not messagebox.askyesno(APP_NAME, "要用範本取代目前的步驟嗎？"):
+        if self.steps() and not messagebox.askyesno(APP_NAME, f"要用範本取代「{self.cur_slot()['name']}」目前的步驟嗎？"):
             return
-        self.s["buy_steps"] = [{"name": n, "x": None, "y": None, "times": t, "wait": w} for n, t, w in BUY_TEMPLATE]
-        save_settings(self.s)
+        self.cur_slot()["steps"] = [{"name": n, "type": "click", "x": None, "y": None, "times": t, "wait": w}
+                                    for n, t, w in BUY_TEMPLATE]
+        self.autosave()
         self.refresh_steps(0)
         if messagebox.askyesno(APP_NAME, "範本建立好了。\n\n請先在瀏覽器打開遊戲，把「物品 → 商店」打開到要買的商品那一頁，"
                                          "然後按「是」開始依序選位置。\n（第一步「打開物品」請點左邊欄的「物品」按鈕）"):
@@ -843,7 +1017,7 @@ class App:
     def set_step_pos(self, i, x, y):
         st = self.steps()[i]
         st["x"], st["y"] = int(x), int(y)
-        save_settings(self.s)
+        self.autosave()
         self.refresh_steps(i)
 
     def pick_step(self):
@@ -881,7 +1055,8 @@ class App:
             return
         if not self.collect_buy():
             return
-        if not any(st.get("x") is not None for st in self.steps()):
+        pool = [st for sl in self.slots() for st in sl.get("steps", [])] if self.s.get("buy_rotate") else self.steps()
+        if not any(st.get("x") is not None for st in pool):
             messagebox.showinfo(APP_NAME, "還沒有設定步驟位置。先按「建立購買範本」。")
             return
         self.buyer.start()

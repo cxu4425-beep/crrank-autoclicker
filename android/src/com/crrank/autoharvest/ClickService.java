@@ -96,6 +96,19 @@ public class ClickService extends AccessibilityService {
         dispatchGesture(new GestureDescription.Builder().addStroke(sd).build(), null, null);
     }
 
+    /** 在 (x, y) 用手指滑動來捲動；down=true 代表內容往下捲（手指往上滑） */
+    public void scroll(int x, int y, boolean down, int notches) {
+        int hgt = getResources().getDisplayMetrics().heightPixels;
+        int dist = Math.min(dp(90) * Math.max(1, notches), hgt / 2);
+        int y2 = down ? y - dist : y + dist;
+        y2 = Math.max(1, Math.min(hgt - 1, y2));
+        Path p = new Path();
+        p.moveTo(Math.max(0, x), Math.max(0, y));
+        p.lineTo(Math.max(0, x), y2);
+        GestureDescription.StrokeDescription sd = new GestureDescription.StrokeDescription(p, 0, 400);
+        dispatchGesture(new GestureDescription.Builder().addStroke(sd).build(), null, null);
+    }
+
     private WindowManager.LayoutParams overlayParams(int w, int hgt, int extraFlags) {
         WindowManager.LayoutParams lp = new WindowManager.LayoutParams(w, hgt,
                 WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,

@@ -221,9 +221,31 @@ public final class Engine {
         public Integer x, y;
         public int times = 1;
         public double wait = 1.0;
+        public String type = "click"; // click / scroll
+        public String dir = "down";   // 滾動方向 down / up
+        public int amount = 3;        // 滾動格數
+
+        public boolean isScroll() {
+            return "scroll".equals(type);
+        }
+
+        public String action() {
+            return isScroll() ? "滾動" + ("up".equals(dir) ? "↑" : "↓") + amount + "格" : "點擊";
+        }
     }
 
-    public final List<Step> steps = new ArrayList<>();
+    public static final class Slot {
+        public String name;
+        public final List<Step> steps = new ArrayList<>();
+    }
+
+    public static final int NUM_SLOTS = 3;
+    public final List<Slot> slots = new ArrayList<>();
+    public int slot = 0;
+    public boolean buyRotate = false;
+    /** 目前存檔的步驟（切換存檔時會換成別的清單） */
+    public List<Step> steps = new ArrayList<>();
+    private String curSlotName = "";
     public String buyMode = "restock";
     public double buyOffset = 10, buyEvery = 30;
     public boolean buyNow = true;
@@ -238,40 +260,95 @@ public final class Engine {
         buyOffset = parse(sp.getString("buy_offset", "10"), 10);
         buyEvery = parse(sp.getString("buy_every", "30"), 30);
         buyNow = sp.getBoolean("buy_now", true);
-        steps.clear();
+        buyRotate = sp.getBoolean("buy_rotate", false);
+        slots.clear();
         try {
-            org.json.JSONArray a = new org.json.JSONArray(sp.getString("buy_steps", "[]"));
+            org.json.JSONArray a = new org.json.JSONArray(sp.getString("buy_slots", "[]"));
             for (int i = 0; i < a.length(); i++) {
                 org.json.JSONObject o = a.getJSONObject(i);
-                Step s = new Step();
-                s.name = o.optString("name", "步驟");
-                s.x = o.isNull("x") ? null : o.getInt("x");
-                s.y = o.isNull("y") ? null : o.getInt("y");
-                s.times = Math.max(1, o.optInt("times", 1));
-                s.wait = Math.max(0.1, o.optDouble("wait", 1));
-                steps.add(s);
+                Slot sl = new Slot();
+                sl.name = o.optString("name", "存檔" + (i + 1));
+                readSteps(o.optJSONArray("steps"), sl.steps);
+                slots.add(sl);
             }
         } catch (Exception ignored) {
+        }
+        if (slots.isEmpty()) { // 舊版只有一組步驟 → 搬到「存檔1」
+            Slot first = new Slot();
+            first.name = "存檔1";
+            try {
+                readSteps(new org.json.JSONArray(sp.getString("buy_steps", "[]")), first.steps);
+            } catch (Exception ignored) {
+            }
+            slots.add(first);
+        }
+        while (slots.size() < NUM_SLOTS) {
+            Slot sl = new Slot();
+            sl.name = "存檔" + (slots.size() + 1);
+            slots.add(sl);
+        }
+        int k = sp.getInt("buy_slot", 0);
+        switchSlot(k >= 0 && k < slots.size() ? k : 0);
+    }
+
+    private static void readSteps(org.json.JSONArray a, List<Step> out) throws org.json.JSONException {
+        if (a == null) return;
+        for (int i = 0; i < a.length(); i++) {
+            org.json.JSONObject o = a.getJSONObject(i);
+            Step s = new Step();
+            s.name = o.optString("name", "步驟");
+            s.x = o.isNull("x") ? null : o.getInt("x");
+            s.y = o.isNull("y") ? null : o.getInt("y");
+            s.times = Math.max(1, o.optInt("times", 1));
+            s.wait = Math.max(0.1, o.optDouble("wait", 1));
+            s.type = o.optString("type", "click");
+            s.dir = o.optString("dir", "down");
+            s.amount = Math.max(1, o.optInt("amount", 3));
+            out.add(s);
         }
     }
 
+    public void switchSlot(int i) {
+        slot = i;
+        steps = slots.get(i).steps;
+    }
+
+    public Slot curSlot() {
+        return slots.get(slot);
+    }
+
+    public long lastSaved;
+
+    /** 自動存檔：步驟有任何變動就呼叫 */
     public void saveBuy() {
-        org.json.JSONArray a = new org.json.JSONArray();
+        org.json.JSONArray all = new org.json.JSONArray();
         try {
-            for (Step s : steps) {
-                org.json.JSONObject o = new org.json.JSONObject();
-                o.put("name", s.name);
-                o.put("x", s.x == null ? org.json.JSONObject.NULL : s.x);
-                o.put("y", s.y == null ? org.json.JSONObject.NULL : s.y);
-                o.put("times", s.times);
-                o.put("wait", s.wait);
-                a.put(o);
+            for (Slot sl : slots) {
+                org.json.JSONArray a = new org.json.JSONArray();
+                for (Step s : sl.steps) {
+                    org.json.JSONObject o = new org.json.JSONObject();
+                    o.put("name", s.name);
+                    o.put("x", s.x == null ? org.json.JSONObject.NULL : s.x);
+                    o.put("y", s.y == null ? org.json.JSONObject.NULL : s.y);
+                    o.put("times", s.times);
+                    o.put("wait", s.wait);
+                    o.put("type", s.type);
+                    o.put("dir", s.dir);
+                    o.put("amount", s.amount);
+                    a.put(o);
+                }
+                org.json.JSONObject so = new org.json.JSONObject();
+                so.put("name", sl.name);
+                so.put("steps", a);
+                all.put(so);
             }
         } catch (Exception ignored) {
         }
-        sp.edit().putString("buy_steps", a.toString()).putString("buy_mode", buyMode)
+        sp.edit().putString("buy_slots", all.toString()).remove("buy_steps").putInt("buy_slot", slot)
+                .putBoolean("buy_rotate", buyRotate).putString("buy_mode", buyMode)
                 .putString("buy_offset", fmt(buyOffset)).putString("buy_every", fmt(buyEvery))
                 .putBoolean("buy_now", buyNow).apply();
+        lastSaved = System.currentTimeMillis();
     }
 
     public void buyTemplate() {
@@ -288,7 +365,8 @@ public final class Engine {
     }
 
     public boolean hasBuySteps() {
-        for (Step s : steps) if (s.x != null) return true;
+        for (Slot sl : buyRotate ? slots : java.util.Collections.singletonList(curSlot()))
+            for (Step s : sl.steps) if (s.x != null) return true;
         return false;
     }
 
@@ -343,8 +421,20 @@ public final class Engine {
     /** 依序點每個步驟：每步點 times 次（間隔 1 秒），點完等 wait 秒 */
     private void runSequence(final Runnable done) {
         if (buyBusy) return;
+        // 自動輪播：存檔1 做完接存檔2、存檔3…；否則只做目前存檔
         final List<Step> list = new ArrayList<>();
-        for (Step s : steps) if (s.x != null) list.add(s);
+        final List<String> owner = new ArrayList<>();
+        final List<String> doneNames = new ArrayList<>();
+        for (Slot sl : buyRotate ? slots : java.util.Collections.singletonList(curSlot())) {
+            boolean any = false;
+            for (Step s : sl.steps)
+                if (s.x != null) {
+                    list.add(s);
+                    owner.add(sl.name);
+                    any = true;
+                }
+            if (any) doneNames.add(sl.name);
+        }
         if (list.isEmpty()) {
             buyLog = "沒有設定好位置的步驟";
             changed();
@@ -369,14 +459,22 @@ public final class Engine {
                 if (si >= list.size()) {
                     buyBusy = false;
                     buyRuns++;
-                    buyLog = new java.text.SimpleDateFormat("HH:mm:ss", Locale.US).format(new java.util.Date()) + " 已執行購買";
+                    buyLog = new java.text.SimpleDateFormat("HH:mm:ss", Locale.US).format(new java.util.Date())
+                            + " 已執行 " + android.text.TextUtils.join("→", doneNames);
                     changed();
                     if (done != null) done.run();
                     return;
                 }
                 Step s = list.get(si);
+                if (!owner.get(si).equals(curSlotName)) {
+                    curSlotName = owner.get(si);
+                    changed();
+                }
                 ClickService cs = ClickService.inst;
-                if (cs != null) cs.tap(s.x, s.y);
+                if (cs != null) {
+                    if (s.isScroll()) cs.scroll(s.x, s.y, !"up".equals(s.dir), s.amount);
+                    else cs.tap(s.x, s.y);
+                }
                 ti++;
                 long delay;
                 if (ti < s.times) delay = 1000;
@@ -391,7 +489,7 @@ public final class Engine {
     }
 
     public String buyStatus() {
-        if (buyBusy) return "購買中…";
+        if (buyBusy) return "購買中…（" + curSlotName + "）";
         if (!buyRunning) return "已停止" + (buyLog.isEmpty() ? "" : " · " + buyLog);
         long s = Math.max(0, (buyNextAt - System.currentTimeMillis()) / 1000);
         String at = new java.text.SimpleDateFormat("HH:mm:ss", Locale.US).format(new java.util.Date(buyNextAt));

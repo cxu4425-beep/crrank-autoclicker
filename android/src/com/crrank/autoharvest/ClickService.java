@@ -28,7 +28,7 @@ public class ClickService extends AccessibilityService {
     private Engine e;
     private final Handler h = new Handler(Looper.getMainLooper());
     private LinearLayout bubble;
-    private TextView bubbleTxt, bubbleGo;
+    private TextView bubbleTxt, bubbleGo, bubbleBuy;
     private WindowManager.LayoutParams blp;
     private View pickView;
 
@@ -78,6 +78,7 @@ public class ClickService extends AccessibilityService {
         h.removeCallbacksAndMessages(null);
         if (e != null) {
             e.stop();
+            e.buyStop();
             e.removeListener(listener);
         }
         hideBubble();
@@ -138,12 +139,20 @@ public class ClickService extends AccessibilityService {
         bubbleTxt.setPadding(0, 0, dp(6), 0);
         bubbleGo = chip("▶", 0xFFFFC93C);
         TextView pick = chip("🎯", 0xFF8FD3FF);
+        bubbleBuy = chip("🛒", 0xFFDDDDDD);
         LinearLayout.LayoutParams gap = new LinearLayout.LayoutParams(-2, -2);
         gap.setMargins(dp(4), 0, 0, 0);
+        LinearLayout.LayoutParams gap2 = new LinearLayout.LayoutParams(-2, -2);
+        gap2.setMargins(dp(4), 0, 0, 0);
         bubble.addView(handle);
         bubble.addView(bubbleTxt);
         bubble.addView(bubbleGo);
         bubble.addView(pick, gap);
+        bubble.addView(bubbleBuy, gap2);
+        bubbleBuy.setOnClickListener(v -> {
+            if (e.buyRunning) e.buyStop();
+            else if (!e.buyStart()) Toast.makeText(this, "先在 App 的「自動購買」分頁設定步驟位置", Toast.LENGTH_LONG).show();
+        });
 
         bubbleGo.setOnClickListener(v -> {
             if (e.running) e.stop();
@@ -203,15 +212,30 @@ public class ClickService extends AccessibilityService {
         bubbleGo.setText(e.running ? "■" : "▶");
         ((GradientDrawable) bubbleGo.getBackground()).setColor(e.running ? 0xFFFF6B6B : 0xFFFFC93C);
         bubbleTxt.setText(e.running ? "下次 " + e.nextIn() + "s\n已點 " + e.count : "已停止\n已點 " + e.count);
+        ((GradientDrawable) bubbleBuy.getBackground()).setColor(e.buyBusy ? 0xFFFFC93C : e.buyRunning ? 0xFF8FD3FF : 0xFFDDDDDD);
     }
 
     // ---------- 全螢幕選位置 ----------
+    public interface PickCallback {
+        void onPick(int x, int y);
+    }
+
     public void startPick() {
+        startPick("點一下「收成」按鈕的位置", (x, y) -> {
+            e.x = x;
+            e.y = y;
+            e.save();
+            Toast.makeText(this, "已設定位置 (" + x + ", " + y + ")", Toast.LENGTH_SHORT).show();
+            e.changed();
+        });
+    }
+
+    public void startPick(String prompt, PickCallback onPick) {
         if (pickView != null || wm == null) return;
         FrameLayout fl = new FrameLayout(this);
         fl.setBackgroundColor(0x66000000);
         TextView tip = new TextView(this);
-        tip.setText("點一下「收成」按鈕的位置");
+        tip.setText(prompt);
         tip.setTextColor(Color.WHITE);
         tip.setTextSize(20);
         tip.setGravity(Gravity.CENTER);
@@ -235,12 +259,9 @@ public class ClickService extends AccessibilityService {
 
         fl.setOnTouchListener((v, ev) -> {
             if (ev.getActionMasked() == MotionEvent.ACTION_DOWN) {
-                e.x = Math.round(ev.getRawX());
-                e.y = Math.round(ev.getRawY());
-                e.save();
+                int px = Math.round(ev.getRawX()), py = Math.round(ev.getRawY());
                 removePick();
-                Toast.makeText(this, "已設定位置 (" + e.x + ", " + e.y + ")", Toast.LENGTH_SHORT).show();
-                e.changed();
+                onPick.onPick(px, py);
             }
             return true;
         });

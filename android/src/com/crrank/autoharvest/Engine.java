@@ -61,6 +61,7 @@ public final class Engine {
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < 11; i++) sb.append(a.charAt(r.nextInt(a.length())));
         token = sb.toString();
+        loadBuy();
     }
 
     private static double parse(String s, double d) {
@@ -207,6 +208,194 @@ public final class Engine {
     public String statusText() {
         String s = running ? "執行中 · 下次 " + nextIn() + " 秒" : "已停止";
         return s + " · 已點 " + count + " 次";
+    }
+
+    // ---------- 自動購買（照順序點擊步驟，和電腦版 BuyRunner 相同） ----------
+    public static final long RESTOCK_MS = 30 * 60 * 1000L;
+    public static final Object[][] BUY_TEMPLATE = {
+            {"打開「物品」", 1, 1.2}, {"點「商店」分頁", 1, 1.0}, {"點商品分類（道具／地形）", 1, 1.0},
+            {"點商品的「購買」", 3, 1.0}, {"關閉商店 ×", 1, 0.5}};
+
+    public static final class Step {
+        public String name;
+        public Integer x, y;
+        public int times = 1;
+        public double wait = 1.0;
+    }
+
+    public final List<Step> steps = new ArrayList<>();
+    public String buyMode = "restock";
+    public double buyOffset = 10, buyEvery = 30;
+    public boolean buyNow = true;
+    public volatile boolean buyRunning, buyBusy;
+    public int buyRuns;
+    public long buyNextAt;
+    public String buyLog = "";
+    private int seqGen;
+
+    void loadBuy() {
+        buyMode = sp.getString("buy_mode", "restock");
+        buyOffset = parse(sp.getString("buy_offset", "10"), 10);
+        buyEvery = parse(sp.getString("buy_every", "30"), 30);
+        buyNow = sp.getBoolean("buy_now", true);
+        steps.clear();
+        try {
+            org.json.JSONArray a = new org.json.JSONArray(sp.getString("buy_steps", "[]"));
+            for (int i = 0; i < a.length(); i++) {
+                org.json.JSONObject o = a.getJSONObject(i);
+                Step s = new Step();
+                s.name = o.optString("name", "步驟");
+                s.x = o.isNull("x") ? null : o.getInt("x");
+                s.y = o.isNull("y") ? null : o.getInt("y");
+                s.times = Math.max(1, o.optInt("times", 1));
+                s.wait = Math.max(0.1, o.optDouble("wait", 1));
+                steps.add(s);
+            }
+        } catch (Exception ignored) {
+        }
+    }
+
+    public void saveBuy() {
+        org.json.JSONArray a = new org.json.JSONArray();
+        try {
+            for (Step s : steps) {
+                org.json.JSONObject o = new org.json.JSONObject();
+                o.put("name", s.name);
+                o.put("x", s.x == null ? org.json.JSONObject.NULL : s.x);
+                o.put("y", s.y == null ? org.json.JSONObject.NULL : s.y);
+                o.put("times", s.times);
+                o.put("wait", s.wait);
+                a.put(o);
+            }
+        } catch (Exception ignored) {
+        }
+        sp.edit().putString("buy_steps", a.toString()).putString("buy_mode", buyMode)
+                .putString("buy_offset", fmt(buyOffset)).putString("buy_every", fmt(buyEvery))
+                .putBoolean("buy_now", buyNow).apply();
+    }
+
+    public void buyTemplate() {
+        steps.clear();
+        for (Object[] t : BUY_TEMPLATE) {
+            Step s = new Step();
+            s.name = (String) t[0];
+            s.times = (Integer) t[1];
+            s.wait = (Double) t[2];
+            steps.add(s);
+        }
+        saveBuy();
+        changed();
+    }
+
+    public boolean hasBuySteps() {
+        for (Step s : steps) if (s.x != null) return true;
+        return false;
+    }
+
+    private long buyNextTime() {
+        long now = System.currentTimeMillis();
+        if ("restock".equals(buyMode)) return (now / RESTOCK_MS + 1) * RESTOCK_MS + (long) (buyOffset * 1000);
+        return now + (long) (Math.max(1, buyEvery) * 60000);
+    }
+
+    private final Runnable buyTick = new Runnable() {
+        @Override
+        public void run() {
+            if (!buyRunning) return;
+            runSequence(() -> buySchedule());
+        }
+    };
+
+    private void buySchedule() {
+        if (!buyRunning) return;
+        buyNextAt = buyNextTime();
+        h.removeCallbacks(buyTick);
+        h.postDelayed(buyTick, Math.max(0, buyNextAt - System.currentTimeMillis()));
+        changed();
+    }
+
+    /** 開始自動購買；沒有設定好位置的步驟就回傳 false */
+    public boolean buyStart() {
+        if (buyRunning) return true;
+        if (!hasBuySteps()) return false;
+        buyRunning = true;
+        if (buyNow) h.post(buyTick);
+        else buySchedule();
+        changed();
+        return true;
+    }
+
+    public void buyStop() {
+        buyRunning = false;
+        h.removeCallbacks(buyTick);
+        if (buyBusy) {
+            seqGen++;
+            buyBusy = false;
+            buyLog = "已中途停止";
+        }
+        changed();
+    }
+
+    public void buyOnce() {
+        runSequence(null);
+    }
+
+    /** 依序點每個步驟：每步點 times 次（間隔 1 秒），點完等 wait 秒 */
+    private void runSequence(final Runnable done) {
+        if (buyBusy) return;
+        final List<Step> list = new ArrayList<>();
+        for (Step s : steps) if (s.x != null) list.add(s);
+        if (list.isEmpty()) {
+            buyLog = "沒有設定好位置的步驟";
+            changed();
+            if (done != null) done.run();
+            return;
+        }
+        if (ClickService.inst == null) {
+            buyLog = "無障礙服務未開啟";
+            changed();
+            if (done != null) done.run();
+            return;
+        }
+        buyBusy = true;
+        final int gen = ++seqGen;
+        changed();
+        new Runnable() {
+            int si = 0, ti = 0;
+
+            @Override
+            public void run() {
+                if (gen != seqGen) return;
+                if (si >= list.size()) {
+                    buyBusy = false;
+                    buyRuns++;
+                    buyLog = new java.text.SimpleDateFormat("HH:mm:ss", Locale.US).format(new java.util.Date()) + " 已執行購買";
+                    changed();
+                    if (done != null) done.run();
+                    return;
+                }
+                Step s = list.get(si);
+                ClickService cs = ClickService.inst;
+                if (cs != null) cs.tap(s.x, s.y);
+                ti++;
+                long delay;
+                if (ti < s.times) delay = 1000;
+                else {
+                    delay = (long) (s.wait * 1000);
+                    si++;
+                    ti = 0;
+                }
+                h.postDelayed(this, delay);
+            }
+        }.run();
+    }
+
+    public String buyStatus() {
+        if (buyBusy) return "購買中…";
+        if (!buyRunning) return "已停止" + (buyLog.isEmpty() ? "" : " · " + buyLog);
+        long s = Math.max(0, (buyNextAt - System.currentTimeMillis()) / 1000);
+        String at = new java.text.SimpleDateFormat("HH:mm:ss", Locale.US).format(new java.util.Date(buyNextAt));
+        return "執行中 · 下次 " + at + "（" + (s / 60) + ":" + String.format(Locale.US, "%02d", s % 60) + " 後）· 已買 " + buyRuns + " 輪";
     }
 
     // ---------- 區網伺服器 ----------

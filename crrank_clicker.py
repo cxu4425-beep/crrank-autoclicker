@@ -30,7 +30,8 @@ except Exception:
 user32 = ctypes.windll.user32
 MOUSEEVENTF_LEFTDOWN = 0x0002
 MOUSEEVENTF_LEFTUP = 0x0004
-VK_F8, VK_F9 = 0x77, 0x78
+VK_F8, VK_F9, VK_F10 = 0x77, 0x78, 0x79
+CLICK_LOCK = threading.Lock()  # 收成連點和自動購買不會同時點
 
 
 class POINT(ctypes.Structure):
@@ -44,15 +45,16 @@ def get_cursor():
 
 
 def click_at(x, y, restore=True):
-    old = get_cursor()
-    user32.SetCursorPos(int(x), int(y))
-    time.sleep(0.03)
-    user32.mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
-    time.sleep(0.04)
-    user32.mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
-    if restore:
+    with CLICK_LOCK:
+        old = get_cursor()
+        user32.SetCursorPos(int(x), int(y))
         time.sleep(0.03)
-        user32.SetCursorPos(*old)
+        user32.mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
+        time.sleep(0.04)
+        user32.mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
+        if restore:
+            time.sleep(0.03)
+            user32.SetCursorPos(*old)
 
 
 def app_dir():
@@ -63,8 +65,14 @@ def app_dir():
 
 SETTINGS_FILE = os.path.join(app_dir(), "crrank_clicker_settings.json")
 DEFAULTS = {"x": 0, "y": 0, "interval": 60, "unit": "秒", "jitter": 0,
-            "limit": 0, "restore": True, "click_now": True, "port": 8765}
+            "limit": 0, "restore": True, "click_now": True, "port": 8765,
+            "buy_steps": [], "buy_mode": "restock", "buy_every": 30, "buy_offset": 10, "buy_now": True}
 UNIT_SEC = {"秒": 1, "分": 60, "時": 3600}
+RESTOCK_SEC = 1800  # 商店每 30 分鐘（整點、半點）全服補貨
+
+# 購買範本：(步驟名稱, 點幾次, 點完等幾秒)
+BUY_TEMPLATE = [("打開「物品」", 1, 1.2), ("點「商店」分頁", 1, 1.0), ("點商品分類（道具／地形）", 1, 1.0),
+                ("點商品的「購買」", 3, 1.0), ("關閉商店 ×", 1, 0.5)]
 
 
 def load_settings():
@@ -360,6 +368,86 @@ class Clicker:
                 "next_in": max(0, int(round(self.next_at - time.time()))) if self.running else 0}
 
 
+class BuyRunner:
+    """自動購買：照順序點擊步驟（打開物品→商店→分類→購買→關閉），在每次補貨後或每 N 分鐘執行。"""
+
+    def __init__(self, settings):
+        self.s = settings
+        self.running = False
+        self.busy = False
+        self.runs = 0
+        self.next_at = 0.0
+        self.log = ""
+        self.stop_evt = threading.Event()
+        self.thread = None
+        self.on_change = lambda: None
+
+    def next_time(self):
+        now = time.time()
+        if self.s.get("buy_mode") == "restock":
+            base = (int(now) // RESTOCK_SEC + 1) * RESTOCK_SEC
+            return base + float(self.s.get("buy_offset") or 0)
+        return now + max(1.0, float(self.s.get("buy_every") or 30)) * 60
+
+    def run_once(self, check_stop=False):
+        if self.busy:
+            return
+        steps = [st for st in self.s.get("buy_steps", []) if st.get("x") is not None]
+        if not steps:
+            self.log = "沒有設定好位置的步驟"
+            return
+        self.busy = True
+        self.on_change()
+        try:
+            for st in steps:
+                for i in range(max(1, int(st.get("times", 1)))):
+                    if check_stop and self.stop_evt.is_set():
+                        self.log = "已中途停止"
+                        return
+                    click_at(st["x"], st["y"], self.s.get("restore", True))
+                    if i < int(st.get("times", 1)) - 1:
+                        time.sleep(1.0)
+                time.sleep(max(0.1, float(st.get("wait", 1.0))))
+            self.runs += 1
+            self.log = time.strftime("%H:%M:%S") + " 已執行購買"
+        finally:
+            self.busy = False
+            self.on_change()
+
+    def start(self):
+        if self.running:
+            return
+        self.running = True
+        self.stop_evt.clear()
+        self.thread = threading.Thread(target=self._loop, daemon=True)
+        self.thread.start()
+        self.on_change()
+
+    def stop(self):
+        self.running = False
+        self.stop_evt.set()
+        self.on_change()
+
+    def _loop(self):
+        if self.s.get("buy_now", True):
+            self.run_once(True)
+        while not self.stop_evt.is_set():
+            self.next_at = self.next_time()
+            self.on_change()
+            if self.stop_evt.wait(max(0, self.next_at - time.time())):
+                return
+            self.run_once(True)
+
+    def status(self):
+        if self.busy:
+            return "購買中…"
+        if not self.running:
+            return "已停止" + (f" · {self.log}" if self.log else "")
+        s = max(0, int(self.next_at - time.time()))
+        return f"執行中 · 下次 {time.strftime('%H:%M:%S', time.localtime(self.next_at))}（{s // 60}:{s % 60:02d} 後）" \
+               + f" · 已買 {self.runs} 輪"
+
+
 def make_handler(app):
     class H(BaseHTTPRequestHandler):
         def log_message(self, *a):
@@ -420,22 +508,29 @@ class App:
             pass
         self.root.attributes("-topmost", True)
         self.clicker.on_change = lambda: self.root.after(0, self.refresh_btn)
+        self.buyer = BuyRunner(self.s)
+        self.buyer.on_change = lambda: self.root.after(0, self.refresh_buy)
         self.server = None
         self.url = ""
         self.build_ui()
         self.start_server()
         self.root.protocol("WM_DELETE_WINDOW", self.quit)
         self.root.after(200, self.poll)
-        self._keys = {VK_F8: False, VK_F9: False}
+        self._keys = {VK_F8: False, VK_F9: False, VK_F10: False}
 
     # ----- UI -----
     def build_ui(self):
         nb = ttk.Notebook(self.root)
         nb.pack(fill="both", expand=True, padx=8, pady=8)
+        self.nb = nb
         pc = ttk.Frame(nb, padding=10)
+        buy = ttk.Frame(nb, padding=10)
         ph = ttk.Frame(nb, padding=10)
         nb.add(pc, text=" 電腦連點 ")
+        nb.add(buy, text=" 自動購買 ")
         nb.add(ph, text=" 手機 ")
+        self.buy_tab = buy
+        self.build_buy_tab(buy)
 
         r = 0
         ttk.Label(pc, text="點擊位置（螢幕座標）", font=("Microsoft JhengHei UI", 10, "bold")).grid(row=r, column=0, columnspan=4, sticky="w")
@@ -567,29 +662,239 @@ class App:
             self.root.after(300, lambda: click_at(self.s["x"], self.s["y"], self.s["restore"]))
 
     def pick(self):
+        def done(x, y):
+            self.vx.set(x)
+            self.vy.set(y)
+            self.collect()
+        self.pick_point("點一下「收成」按鈕的位置（Esc 取消）", done)
+
+    def pick_point(self, prompt, on_pick, on_cancel=None):
         vx = user32.GetSystemMetrics(76)
         vy = user32.GetSystemMetrics(77)
         vw = user32.GetSystemMetrics(78)
         vh = user32.GetSystemMetrics(79)
+        self.root.withdraw()  # 把主視窗藏起來，才不會擋住要選的按鈕
         ov = tk.Toplevel(self.root)
         ov.overrideredirect(True)
         ov.geometry(f"{vw}x{vh}+{vx}+{vy}")
         ov.attributes("-alpha", 0.3)
         ov.attributes("-topmost", True)
         ov.configure(bg="black", cursor="crosshair")
-        tk.Label(ov, text="點一下「收成」按鈕的位置（Esc 取消）", fg="white", bg="black",
+        tk.Label(ov, text=prompt, fg="white", bg="black",
                  font=("Microsoft JhengHei UI", 20, "bold")).place(relx=0.5, rely=0.08, anchor="n")
 
         def done(e):
             x, y = get_cursor()
-            self.vx.set(x)
-            self.vy.set(y)
             ov.destroy()
-            self.collect()
+            self.root.deiconify()
+            on_pick(x, y)
+
+        def cancel(e):
+            ov.destroy()
+            self.root.deiconify()
+            if on_cancel:
+                on_cancel()
 
         ov.bind("<Button-1>", done)
-        ov.bind("<Escape>", lambda e: ov.destroy())
+        ov.bind("<Escape>", cancel)
         ov.focus_force()
+
+    # ----- 自動購買分頁 -----
+    def build_buy_tab(self, f):
+        f.columnconfigure(1, weight=1)
+        ttk.Label(f, text="自動購買（照順序模擬點擊）", font=("Microsoft JhengHei UI", 10, "bold")).grid(row=0, column=0, columnspan=4, sticky="w")
+        cols = ("n", "name", "x", "y", "times", "wait")
+        tv = ttk.Treeview(f, columns=cols, show="headings", height=6, selectmode="browse")
+        for c, t, w in zip(cols, ("#", "步驟", "X", "Y", "次數", "等待秒"), (28, 190, 52, 52, 40, 52)):
+            tv.heading(c, text=t)
+            tv.column(c, width=w, anchor="w" if c == "name" else "center", stretch=(c == "name"))
+        tv.grid(row=1, column=0, columnspan=4, sticky="nsew", pady=(4, 4))
+        tv.bind("<<TreeviewSelect>>", lambda e: self.load_step())
+        self.tv = tv
+
+        ed = ttk.Frame(f)
+        ed.grid(row=2, column=0, columnspan=4, sticky="we")
+        self.st_name = tk.StringVar()
+        self.st_times = tk.StringVar(value="1")
+        self.st_wait = tk.StringVar(value="1")
+        ttk.Label(ed, text="名稱").pack(side="left")
+        ttk.Entry(ed, textvariable=self.st_name, width=16).pack(side="left", padx=(2, 6))
+        ttk.Label(ed, text="點").pack(side="left")
+        ttk.Entry(ed, textvariable=self.st_times, width=3).pack(side="left")
+        ttk.Label(ed, text="次 等").pack(side="left")
+        ttk.Entry(ed, textvariable=self.st_wait, width=4).pack(side="left")
+        ttk.Label(ed, text="秒").pack(side="left")
+        ttk.Button(ed, text="套用", width=5, command=self.apply_step).pack(side="left", padx=4)
+
+        b1 = ttk.Frame(f)
+        b1.grid(row=3, column=0, columnspan=4, sticky="we", pady=(4, 0))
+        for i, (t, cmd) in enumerate((("📋 建立購買範本", self.buy_template), ("➕ 新增步驟", self.add_step),
+                                      ("🗑 刪除", self.del_step))):
+            ttk.Button(b1, text=t, command=cmd).grid(row=0, column=i, sticky="we", padx=1)
+            b1.columnconfigure(i, weight=1)
+        b2 = ttk.Frame(f)
+        b2.grid(row=4, column=0, columnspan=4, sticky="we")
+        for i, (t, cmd) in enumerate((("🎯 選位置", self.pick_step), ("🎯 依序選全部", self.pick_all),
+                                      ("↑", lambda: self.move_step(-1)), ("↓", lambda: self.move_step(1)))):
+            ttk.Button(b2, text=t, command=cmd).grid(row=0, column=i, sticky="we", padx=1)
+            b2.columnconfigure(i, weight=1 if i < 2 else 0)
+        ttk.Label(f, text="選中步驟後，把滑鼠移到目標上按 F8 也能記錄位置", foreground="#666").grid(row=5, column=0, columnspan=4, sticky="w")
+
+        ttk.Separator(f).grid(row=6, column=0, columnspan=4, sticky="we", pady=6)
+        self.vbmode = tk.StringVar(value=self.s.get("buy_mode", "restock"))
+        self.vboff = tk.StringVar(value=str(self.s.get("buy_offset", 10)))
+        self.vbevery = tk.StringVar(value=str(self.s.get("buy_every", 30)))
+        r1 = ttk.Frame(f)
+        r1.grid(row=7, column=0, columnspan=4, sticky="w")
+        ttk.Radiobutton(r1, text="每次補貨後（整點、半點）過", variable=self.vbmode, value="restock").pack(side="left")
+        ttk.Entry(r1, textvariable=self.vboff, width=4).pack(side="left")
+        ttk.Label(r1, text="秒").pack(side="left")
+        r2 = ttk.Frame(f)
+        r2.grid(row=8, column=0, columnspan=4, sticky="w")
+        ttk.Radiobutton(r2, text="每", variable=self.vbmode, value="interval").pack(side="left")
+        ttk.Entry(r2, textvariable=self.vbevery, width=5).pack(side="left")
+        ttk.Label(r2, text="分鐘").pack(side="left")
+        self.vbnow = tk.BooleanVar(value=self.s.get("buy_now", True))
+        ttk.Checkbutton(f, text="按開始時立刻先買一次", variable=self.vbnow).grid(row=9, column=0, columnspan=4, sticky="w")
+        self.bbtn = tk.Button(f, text="▶ 開始自動購買 (F10)", font=("Microsoft JhengHei UI", 12, "bold"), bg="#8fd3ff",
+                              relief="flat", command=self.toggle_buy)
+        self.bbtn.grid(row=10, column=0, columnspan=4, sticky="we", pady=(8, 2))
+        ttk.Button(f, text="立即買一次（測試）", command=self.buy_once).grid(row=11, column=0, columnspan=4, sticky="we")
+        self.bstatus = ttk.Label(f, text="已停止", wraplength=380)
+        self.bstatus.grid(row=12, column=0, columnspan=4, sticky="w", pady=(4, 0))
+        ttk.Label(f, foreground="#666", wraplength=380, justify="left", text=(
+            "用法：按「建立購買範本」→ 先在瀏覽器打開商店確認位置，再按「依序選全部」把每一步點在對應按鈕上。"
+            "要買多樣商品就多加幾個「購買」步驟。開始前「物品」視窗要先關著，遊戲畫面不要被擋住。")).grid(row=13, column=0, columnspan=4, sticky="w", pady=(4, 0))
+        self.refresh_steps()
+
+    def steps(self):
+        return self.s.setdefault("buy_steps", [])
+
+    def refresh_steps(self, select=None):
+        self.tv.delete(*self.tv.get_children())
+        for i, st in enumerate(self.steps()):
+            x = "—" if st.get("x") is None else st["x"]
+            y = "—" if st.get("y") is None else st["y"]
+            self.tv.insert("", "end", iid=str(i), values=(i + 1, st["name"], x, y, st.get("times", 1), st.get("wait", 1)))
+        if select is not None and 0 <= select < len(self.steps()):
+            self.tv.selection_set(str(select))
+            self.tv.see(str(select))
+
+    def sel_index(self):
+        sel = self.tv.selection()
+        return int(sel[0]) if sel else None
+
+    def load_step(self):
+        i = self.sel_index()
+        if i is None:
+            return
+        st = self.steps()[i]
+        self.st_name.set(st["name"])
+        self.st_times.set(str(st.get("times", 1)))
+        self.st_wait.set(str(st.get("wait", 1)))
+
+    def apply_step(self):
+        i = self.sel_index()
+        if i is None:
+            return
+        try:
+            times = max(1, int(float(self.st_times.get())))
+            wait = max(0.1, float(self.st_wait.get()))
+        except ValueError:
+            messagebox.showerror(APP_NAME, "次數和等待秒數要是數字")
+            return
+        st = self.steps()[i]
+        st.update(name=self.st_name.get().strip() or st["name"], times=times, wait=wait)
+        save_settings(self.s)
+        self.refresh_steps(i)
+
+    def add_step(self):
+        self.steps().append({"name": "點「購買」", "x": None, "y": None, "times": 3, "wait": 1.0})
+        save_settings(self.s)
+        self.refresh_steps(len(self.steps()) - 1)
+
+    def del_step(self):
+        i = self.sel_index()
+        if i is None:
+            return
+        del self.steps()[i]
+        save_settings(self.s)
+        self.refresh_steps(min(i, len(self.steps()) - 1))
+
+    def move_step(self, d):
+        i = self.sel_index()
+        st = self.steps()
+        if i is None or not (0 <= i + d < len(st)):
+            return
+        st[i], st[i + d] = st[i + d], st[i]
+        save_settings(self.s)
+        self.refresh_steps(i + d)
+
+    def buy_template(self):
+        if self.steps() and not messagebox.askyesno(APP_NAME, "要用範本取代目前的步驟嗎？"):
+            return
+        self.s["buy_steps"] = [{"name": n, "x": None, "y": None, "times": t, "wait": w} for n, t, w in BUY_TEMPLATE]
+        save_settings(self.s)
+        self.refresh_steps(0)
+        if messagebox.askyesno(APP_NAME, "範本建立好了。\n\n請先在瀏覽器打開遊戲，把「物品 → 商店」打開到要買的商品那一頁，"
+                                         "然後按「是」開始依序選位置。\n（第一步「打開物品」請點左邊欄的「物品」按鈕）"):
+            self.pick_all()
+
+    def set_step_pos(self, i, x, y):
+        st = self.steps()[i]
+        st["x"], st["y"] = int(x), int(y)
+        save_settings(self.s)
+        self.refresh_steps(i)
+
+    def pick_step(self):
+        i = self.sel_index()
+        if i is None:
+            messagebox.showinfo(APP_NAME, "先在列表選一個步驟")
+            return
+        self.pick_point(f"第 {i + 1} 步：點一下「{self.steps()[i]['name']}」的位置（Esc 取消）",
+                        lambda x, y: self.set_step_pos(i, x, y))
+
+    def pick_all(self, i=0):
+        if i >= len(self.steps()):
+            messagebox.showinfo(APP_NAME, "全部位置都選好了！可以按「立即買一次」測試。")
+            return
+        self.refresh_steps(i)
+        self.pick_point(f"第 {i + 1}/{len(self.steps())} 步：點「{self.steps()[i]['name']}」的位置（Esc 結束）",
+                        lambda x, y: (self.set_step_pos(i, x, y), self.root.after(250, lambda: self.pick_all(i + 1))))
+
+    def collect_buy(self):
+        try:
+            off = float(self.vboff.get() or 0)
+            every = float(self.vbevery.get() or 30)
+            if every <= 0 or off < 0:
+                raise ValueError
+        except ValueError:
+            messagebox.showerror(APP_NAME, "請輸入正確的秒數／分鐘數")
+            return False
+        self.s.update(buy_mode=self.vbmode.get(), buy_offset=off, buy_every=every, buy_now=self.vbnow.get())
+        save_settings(self.s)
+        return True
+
+    def toggle_buy(self):
+        if self.buyer.running:
+            self.buyer.stop()
+            return
+        if not self.collect_buy():
+            return
+        if not any(st.get("x") is not None for st in self.steps()):
+            messagebox.showinfo(APP_NAME, "還沒有設定步驟位置。先按「建立購買範本」。")
+            return
+        self.buyer.start()
+
+    def buy_once(self):
+        if self.collect_buy():
+            threading.Thread(target=self.buyer.run_once, daemon=True).start()
+
+    def refresh_buy(self):
+        if self.buyer.running:
+            self.bbtn.config(text="■ 停止自動購買 (F10)", bg="#ff6b6b")
+        else:
+            self.bbtn.config(text="▶ 開始自動購買 (F10)", bg="#8fd3ff")
 
     def export(self):
         d = filedialog.askdirectory(title="選擇匯出資料夾", initialdir=app_dir())
@@ -633,21 +938,31 @@ class App:
     def poll(self):
         st = self.clicker.status()
         self.status.config(text=(f"執行中 · 下次 {st['next_in']} 秒" if st["running"] else "已停止") + f" · 已點 {st['count']} 次")
-        for vk in (VK_F8, VK_F9):
+        self.bstatus.config(text=self.buyer.status())
+        on_buy_tab = self.nb.select() == str(self.buy_tab)
+        for vk in (VK_F8, VK_F9, VK_F10):
             down = bool(user32.GetAsyncKeyState(vk) & 0x8000)
             if down and not self._keys[vk]:
                 if vk == VK_F8:
                     x, y = get_cursor()
-                    self.vx.set(x)
-                    self.vy.set(y)
-                    self.collect()
-                else:
+                    if on_buy_tab:
+                        i = self.sel_index()
+                        if i is not None:
+                            self.set_step_pos(i, x, y)
+                    else:
+                        self.vx.set(x)
+                        self.vy.set(y)
+                        self.collect()
+                elif vk == VK_F9:
                     self.toggle()
+                else:
+                    self.toggle_buy()
             self._keys[vk] = down
         self.root.after(100, self.poll)
 
     def quit(self):
         self.clicker.stop()
+        self.buyer.stop()
         try:
             self.collect()
         except Exception:

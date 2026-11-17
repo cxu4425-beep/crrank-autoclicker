@@ -40,7 +40,7 @@ public class MainActivity extends Activity {
     private View accBox;
     private ScrollView[] tabs;
     private Button[] tabBtns;
-    private String lastUrl = "", seenPos = "", seenIv = "";
+    private String lastUrl = "", seenPos = "", seenIv = "", stepsSig = "";
     private final Runnable listener = this::refresh;
     private final Runnable ticker = new Runnable() {
         @Override
@@ -131,9 +131,9 @@ public class MainActivity extends Activity {
 
         LinearLayout bar = new LinearLayout(this);
         bar.setOrientation(LinearLayout.HORIZONTAL);
-        String[] names = {"定點連點", "手機 / 遙控", "內建遊戲"};
-        tabBtns = new Button[3];
-        for (int i = 0; i < 3; i++) {
+        String[] names = {"定點連點", "自動購買", "手機/遙控", "內建遊戲"};
+        tabBtns = new Button[names.length];
+        for (int i = 0; i < names.length; i++) {
             final int k = i;
             tabBtns[i] = btn(names[i], v -> showTab(k));
             bar.addView(tabBtns[i], new LinearLayout.LayoutParams(0, -2, 1));
@@ -141,14 +141,228 @@ public class MainActivity extends Activity {
         root.addView(bar);
 
         FrameLayout content = new FrameLayout(this);
-        tabs = new ScrollView[]{new ScrollView(this), new ScrollView(this), new ScrollView(this)};
+        tabs = new ScrollView[]{new ScrollView(this), new ScrollView(this), new ScrollView(this), new ScrollView(this)};
         tabs[0].addView(buildClickTab());
-        tabs[1].addView(buildPhoneTab());
-        tabs[2].addView(buildGameTab());
+        tabs[1].addView(buildBuyTab());
+        tabs[2].addView(buildPhoneTab());
+        tabs[3].addView(buildGameTab());
         for (ScrollView s : tabs) content.addView(s, new FrameLayout.LayoutParams(-1, -1));
         root.addView(content, new LinearLayout.LayoutParams(-1, 0, 1));
         setContentView(root);
-        showTab(e.prefs().getInt("tab", 0));
+        int tab = e.prefs().getInt("tab", 0);
+        showTab(tab >= 0 && tab < tabs.length ? tab : 0);
+    }
+
+    // ---------- 分頁 2：自動購買（對應電腦版「自動購買」） ----------
+    private LinearLayout stepsBox;
+    private EditText eboff, ebevery;
+    private android.widget.RadioButton rbRestock, rbEvery;
+    private CheckBox cbnow;
+    private Button bgo;
+    private TextView bstatus;
+
+    private View buildBuyTab() {
+        LinearLayout p = page();
+        p.addView(label("自動購買（照順序模擬點擊）", 16, true));
+        p.addView(hint("按「建立購買範本」→ 先打開遊戲的「物品 → 商店」確認位置 → 按「依序選全部」把每一步點在對應按鈕上。要買多樣商品就多加幾個「購買」步驟。"));
+        stepsBox = new LinearLayout(this);
+        stepsBox.setOrientation(LinearLayout.VERTICAL);
+        p.addView(stepsBox);
+        p.addView(row2(btn("📋 建立購買範本", v -> {
+            if (e.steps.isEmpty()) makeTemplate();
+            else new AlertDialog.Builder(this).setMessage("要用範本取代目前的步驟嗎？")
+                    .setPositiveButton("取代", (d, w) -> makeTemplate()).setNegativeButton("取消", null).show();
+        }), btn("➕ 新增步驟", v -> {
+            Engine.Step s = new Engine.Step();
+            s.name = "點「購買」";
+            s.times = 3;
+            e.steps.add(s);
+            e.saveBuy();
+            renderSteps();
+        })));
+        p.addView(btn("🎯 依序選全部位置", v -> pickSteps(0, true)));
+        p.addView(sep());
+
+        android.widget.RadioGroup rg = new android.widget.RadioGroup(this);
+        rbRestock = new android.widget.RadioButton(this);
+        rbRestock.setText("每次補貨後（整點、半點）過");
+        rbRestock.setId(View.generateViewId());
+        rbEvery = new android.widget.RadioButton(this);
+        rbEvery.setText("每 N 分鐘");
+        rbEvery.setId(View.generateViewId());
+        rg.addView(rbRestock);
+        rg.addView(rbEvery);
+        p.addView(rg);
+        eboff = num(true);
+        ebevery = num(true);
+        p.addView(row(label("補貨後過  ", 15, false), eboff, label(" 秒", 15, false)));
+        p.addView(row(label("每  ", 15, false), ebevery, label(" 分鐘", 15, false)));
+        cbnow = new CheckBox(this);
+        cbnow.setText("按開始時立刻先買一次");
+        p.addView(cbnow);
+        bgo = btn("▶ 開始自動購買", v -> toggleBuy());
+        bgo.setTextSize(18);
+        bgo.setTypeface(Typeface.DEFAULT_BOLD);
+        LinearLayout.LayoutParams gp = new LinearLayout.LayoutParams(-1, dp(56));
+        gp.setMargins(0, dp(10), 0, dp(4));
+        p.addView(bgo, gp);
+        p.addView(btn("立即買一次（測試）", v -> {
+            if (!collectBuy() || needService()) return;
+            Toast.makeText(this, "1.5 秒後開始執行購買步驟", Toast.LENGTH_SHORT).show();
+            moveTaskToBack(true);
+            e.h.postDelayed(e::buyOnce, 1500);
+        }));
+        bstatus = label("已停止", 14, false);
+        p.addView(bstatus);
+        p.addView(hint("浮動控制鈕上的 🛒 也能開始／停止自動購買。開始前「物品」視窗要先關著，遊戲畫面要停在那裡、螢幕保持亮著。"));
+        return p;
+    }
+
+    private void makeTemplate() {
+        e.buyTemplate();
+        renderSteps();
+        new AlertDialog.Builder(this).setTitle("範本建立好了")
+                .setMessage("請先打開遊戲，把「物品 → 商店」開到要買的商品那一頁，再回來按「依序選全部位置」。\n（第一步「打開物品」要點左邊欄的「物品」按鈕）")
+                .setPositiveButton("好", null).show();
+    }
+
+    private void renderSteps() {
+        if (stepsBox == null) return;
+        stepsBox.removeAllViews();
+        if (e.steps.isEmpty()) {
+            stepsBox.addView(hint("還沒有步驟。"));
+            return;
+        }
+        for (int i = 0; i < e.steps.size(); i++) {
+            final int k = i;
+            Engine.Step s = e.steps.get(i);
+            LinearLayout card = new LinearLayout(this);
+            card.setOrientation(LinearLayout.VERTICAL);
+            card.setPadding(dp(10), dp(6), dp(10), dp(6));
+            GradientDrawable g = new GradientDrawable();
+            g.setColor(0xFFF3F4F8);
+            g.setCornerRadius(dp(8));
+            card.setBackground(g);
+            LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(-1, -2);
+            cp.setMargins(0, dp(3), 0, dp(3));
+            String pos = s.x == null ? "（未選位置）" : "(" + s.x + ", " + s.y + ")";
+            card.addView(label((i + 1) + ". " + s.name + "  " + pos + "\n點 " + s.times + " 次，點完等 " + Engine.fmt(s.wait) + " 秒", 14, false));
+            LinearLayout r = row();
+            Button pk = btn("🎯", v -> pickSteps(k, false));
+            Button ed = btn("編輯", v -> editStep(k));
+            Button up = btn("↑", v -> {
+                if (k > 0) {
+                    e.steps.add(k - 1, e.steps.remove(k));
+                    e.saveBuy();
+                    renderSteps();
+                }
+            });
+            Button del = btn("刪除", v -> {
+                e.steps.remove(k);
+                e.saveBuy();
+                renderSteps();
+            });
+            for (Button b : new Button[]{pk, ed, up, del}) r.addView(b, new LinearLayout.LayoutParams(0, -2, 1));
+            card.addView(r);
+            stepsBox.addView(card, cp);
+        }
+    }
+
+    private void editStep(int k) {
+        Engine.Step s = e.steps.get(k);
+        LinearLayout l = page();
+        EditText n = new EditText(this);
+        n.setText(s.name);
+        EditText t = num(false);
+        t.setText(String.valueOf(s.times));
+        EditText w = num(true);
+        w.setText(Engine.fmt(s.wait));
+        l.addView(label("名稱", 14, false));
+        l.addView(n);
+        l.addView(row(label("點幾次  ", 14, false), t));
+        l.addView(row(label("點完等幾秒  ", 14, false), w));
+        new AlertDialog.Builder(this).setTitle("編輯第 " + (k + 1) + " 步").setView(l)
+                .setPositiveButton("儲存", (d, x) -> {
+                    try {
+                        s.name = n.getText().toString().trim().isEmpty() ? s.name : n.getText().toString().trim();
+                        s.times = Math.max(1, (int) Double.parseDouble(t.getText().toString()));
+                        s.wait = Math.max(0.1, Double.parseDouble(w.getText().toString()));
+                    } catch (Exception ex) {
+                        Toast.makeText(this, "次數和秒數要是數字", Toast.LENGTH_SHORT).show();
+                    }
+                    e.saveBuy();
+                    renderSteps();
+                }).setNegativeButton("取消", null).show();
+    }
+
+    /** 選第 k 步的位置；all=true 時選完自動接著選下一步 */
+    private void pickSteps(int k, boolean all) {
+        if (e.steps.isEmpty()) {
+            Toast.makeText(this, "先按「建立購買範本」或「新增步驟」", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        if (needService()) return;
+        moveTaskToBack(true);
+        e.h.postDelayed(() -> pickNext(k, all), 700);
+    }
+
+    private void pickNext(int k, boolean all) {
+        ClickService s = ClickService.inst;
+        if (s == null || k >= e.steps.size()) {
+            if (all && s != null) Toast.makeText(s, "全部位置都選好了！可以按「立即買一次」測試", Toast.LENGTH_LONG).show();
+            return;
+        }
+        Engine.Step st = e.steps.get(k);
+        String prompt = (all ? "第 " + (k + 1) + "/" + e.steps.size() + " 步：" : "") + "點「" + st.name + "」的位置";
+        s.startPick(prompt, (x, y) -> {
+            st.x = x;
+            st.y = y;
+            e.saveBuy();
+            e.changed();
+            if (all) e.h.postDelayed(() -> pickNext(k + 1, true), 400);
+            else Toast.makeText(s, "第 " + (k + 1) + " 步位置 (" + x + ", " + y + ")", Toast.LENGTH_SHORT).show();
+        });
+    }
+
+    private void loadBuyFields() {
+        rbRestock.setChecked(!"interval".equals(e.buyMode));
+        rbEvery.setChecked("interval".equals(e.buyMode));
+        eboff.setText(Engine.fmt(e.buyOffset));
+        ebevery.setText(Engine.fmt(e.buyEvery));
+        cbnow.setChecked(e.buyNow);
+        renderSteps();
+    }
+
+    private boolean collectBuy() {
+        try {
+            double off = Double.parseDouble(eboff.getText().toString().trim());
+            double ev = Double.parseDouble(ebevery.getText().toString().trim());
+            if (off < 0 || ev <= 0) throw new NumberFormatException();
+            e.buyOffset = off;
+            e.buyEvery = ev;
+        } catch (Exception ex) {
+            Toast.makeText(this, "請輸入正確的秒數／分鐘數", Toast.LENGTH_LONG).show();
+            return false;
+        }
+        e.buyMode = rbEvery.isChecked() ? "interval" : "restock";
+        e.buyNow = cbnow.isChecked();
+        e.saveBuy();
+        return true;
+    }
+
+    private void toggleBuy() {
+        if (e.buyRunning) {
+            e.buyStop();
+            return;
+        }
+        if (!collectBuy() || needService()) return;
+        if (!e.hasBuySteps()) {
+            Toast.makeText(this, "還沒有設定步驟位置，先按「建立購買範本」", Toast.LENGTH_LONG).show();
+            return;
+        }
+        Toast.makeText(this, "已開始自動購買，請切到遊戲畫面（浮動鈕 🛒 可停止）", Toast.LENGTH_LONG).show();
+        moveTaskToBack(true);
+        e.h.postDelayed(e::buyStart, 900);
     }
 
     private void showTab(int k) {
@@ -372,6 +586,17 @@ public class MainActivity extends Activity {
             eiv.setText(Engine.fmt(e.interval));
             for (int i = 0; i < Engine.UNITS.length; i++) if (Engine.UNITS[i].equals(e.unit)) sun.setSelection(i);
         }
+        if (bgo != null) {
+            bgo.setText(e.buyRunning ? "■ 停止自動購買" : "▶ 開始自動購買");
+            bgo.getBackground().setTint(e.buyRunning ? 0xFFFF6B6B : 0xFF8FD3FF);
+            bstatus.setText(e.buyStatus());
+            StringBuilder sig = new StringBuilder();
+            for (Engine.Step s : e.steps) sig.append(s.name).append(s.x).append(',').append(s.y).append(s.times).append(s.wait).append(';');
+            if (!sig.toString().equals(stepsSig)) {
+                stepsSig = sig.toString();
+                renderSteps();
+            }
+        }
         String u = e.url();
         if (!u.equals(lastUrl)) {
             lastUrl = u;
@@ -401,6 +626,7 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         loadFields();
+        loadBuyFields();
         e.addListener(listener);
         e.h.post(ticker);
     }

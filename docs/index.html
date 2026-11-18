@@ -100,7 +100,9 @@ details.faq p,details.faq ul{color:var(--muted);margin:10px 0 0;font-size:15px}
 .ver .sum{margin:4px 0 8px;color:var(--ink)}
 .ver ul{margin:0;padding-left:20px;color:var(--muted);font-size:15px}
 .ver ul li{margin:3px 0}
-.ver .rel{font-size:14px}
+.ver .rels{display:flex;flex-wrap:wrap;gap:8px 14px;margin-top:8px;font-size:14px;align-items:center}
+.ver .rels a.src{text-decoration:none;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:3px 10px;color:var(--ink)}
+.ver .rels a.src:hover{border-color:var(--blue)}
 
 footer{border-top:1px solid var(--line);padding:28px 0 40px;color:var(--muted);font-size:14px}
 
@@ -259,7 +261,7 @@ footer{border-top:1px solid var(--line);padding:28px 0 40px;color:var(--muted);f
   <!-- ========== 更新日誌：每發一個新版本就在最上面加一筆 ========== -->
   <section id="changelog">
     <h2>更新日誌</h2>
-    <p class="sec-lead">每個版本新增了什麼。下載舊版請到 <a href="https://github.com/cxu4425-beep/crrank-autoclicker/releases">GitHub Releases</a>。</p>
+    <p class="sec-lead">每個版本新增了什麼，以及那個版本的原始碼：<b>txt</b> 是全部程式合成一個文字檔，<b>zip</b> 是完整的專案資料夾。下載舊版程式請到 <a href="https://github.com/cxu4425-beep/crrank-autoclicker/releases">GitHub Releases</a>。</p>
     <div class="log">
 
       <div class="ver latest">
@@ -272,7 +274,7 @@ footer{border-top:1px solid var(--line);padding:28px 0 40px;color:var(--muted);f
           <li>🔄 面板會記住收成／自動購買是否在執行，重新整理後自動接續</li>
           <li>修正：打開商店時商品還沒載入就讀取，可能讀到 0 樣的問題</li>
         </ul>
-        <a class="rel" href="https://github.com/cxu4425-beep/crrank-autoclicker/releases/tag/v1.4">查看 v1.4 →</a>
+        <div class="rels"><a href="https://github.com/cxu4425-beep/crrank-autoclicker/releases/tag/v1.4">查看 v1.4 →</a><a class="src" href="https://github.com/cxu4425-beep/crrank-autoclicker/releases/download/v1.4/source-code.txt">📄 原始碼 txt</a><a class="src" href="https://github.com/cxu4425-beep/crrank-autoclicker/archive/refs/tags/v1.4.zip">📦 原始碼 zip</a></div>
       </div>
 
       <div class="ver">
@@ -284,7 +286,7 @@ footer{border-top:1px solid var(--line);padding:28px 0 40px;color:var(--muted);f
           <li>🖱️ 滾動步驟：商品在下面看不到時先捲過去，可設方向和格數</li>
           <li>步驟列表多了「動作」欄（點擊／滾動↓3格）</li>
         </ul>
-        <a class="rel" href="https://github.com/cxu4425-beep/crrank-autoclicker/releases/tag/v1.3">查看 v1.3 →</a>
+        <div class="rels"><a href="https://github.com/cxu4425-beep/crrank-autoclicker/releases/tag/v1.3">查看 v1.3 →</a><a class="src" href="https://github.com/cxu4425-beep/crrank-autoclicker/releases/download/v1.3/source-code.txt">📄 原始碼 txt</a><a class="src" href="https://github.com/cxu4425-beep/crrank-autoclicker/archive/refs/tags/v1.3.zip">📦 原始碼 zip</a></div>
       </div>
 
       <div class="ver">
@@ -297,7 +299,7 @@ footer{border-top:1px solid var(--line);padding:28px 0 40px;color:var(--muted);f
           <li>⌨️ 電腦版 F10 開始／停止；Android 浮動鈕新增 🛒</li>
           <li>📄 每次更新提供全部原始碼的 txt 檔</li>
         </ul>
-        <a class="rel" href="https://github.com/cxu4425-beep/crrank-autoclicker/releases/tag/v1.2">查看 v1.2 →</a>
+        <div class="rels"><a href="https://github.com/cxu4425-beep/crrank-autoclicker/releases/tag/v1.2">查看 v1.2 →</a><a class="src" href="https://github.com/cxu4425-beep/crrank-autoclicker/releases/download/v1.2/source-code.txt">📄 原始碼 txt</a><a class="src" href="https://github.com/cxu4425-beep/crrank-autoclicker/archive/refs/tags/v1.2.zip">📦 原始碼 zip</a></div>
       </div>
 
       <div class="ver">
@@ -309,7 +311,7 @@ footer{border-top:1px solid var(--line);padding:28px 0 40px;color:var(--muted);f
           <li>每樣最多買到庫存數量，缺貨／已買完／錢不夠就停，買完自動關掉商店</li>
           <li>🍎 控制頁加入 iPhone（Safari）和 Android 的圖文設定教學</li>
         </ul>
-        <a class="rel" href="https://github.com/cxu4425-beep/crrank-autoclicker/releases/tag/v1.1">查看 v1.1 →</a>
+        <div class="rels"><a href="https://github.com/cxu4425-beep/crrank-autoclicker/releases/tag/v1.1">查看 v1.1 →</a><a class="src" href="https://github.com/cxu4425-beep/crrank-autoclicker/releases/download/v1.1/source-code.txt">📄 原始碼 txt</a><a class="src" href="https://github.com/cxu4425-beep/crrank-autoclicker/archive/refs/tags/v1.1.zip">📦 原始碼 zip</a></div>
       </div>
 
       <div class="ver">
@@ -321,7 +323,7 @@ footer{border-top:1px solid var(--line);padding:28px 0 40px;color:var(--muted);f
           <li>🤖 Android App：無障礙定點連點、浮動控制鈕、區網遙控、內建遊戲模式</li>
           <li>📂 可以匯出手機用的腳本、書籤碼和說明</li>
         </ul>
-        <a class="rel" href="https://github.com/cxu4425-beep/crrank-autoclicker/releases/tag/v1.0">查看 v1.0 →</a>
+        <div class="rels"><a href="https://github.com/cxu4425-beep/crrank-autoclicker/releases/tag/v1.0">查看 v1.0 →</a><a class="src" href="https://github.com/cxu4425-beep/crrank-autoclicker/releases/download/v1.0/source-code.txt">📄 原始碼 txt</a><a class="src" href="https://github.com/cxu4425-beep/crrank-autoclicker/archive/487a0bbbdd1f1cb2ccac19e7ed78f1ac84bf7a56.zip">📦 原始碼 zip</a></div>
       </div>
 
     </div>

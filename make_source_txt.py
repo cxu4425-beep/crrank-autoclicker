@@ -1,10 +1,13 @@
 # -*- coding: utf-8 -*-
-"""把所有原始碼合併成一個 txt 檔：原始碼.txt（每次更新後執行一次）"""
+"""把所有原始碼合併成一個 txt 檔：原始碼.txt（每次更新後執行一次）
+用法：python make_source_txt.py [專案資料夾] [輸出檔] [版本]（不加參數就用目前資料夾）"""
 import os
+import sys
 import time
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-OUT = os.path.join(HERE, "原始碼.txt")
+HERE = os.path.abspath(sys.argv[1]) if len(sys.argv) > 1 else os.path.dirname(os.path.abspath(__file__))
+OUT = os.path.abspath(sys.argv[2]) if len(sys.argv) > 2 else os.path.join(HERE, "原始碼.txt")
+VERSION = sys.argv[3] if len(sys.argv) > 3 else ""
 FILES = [
     "crrank_clicker.py",
     "make_source_txt.py",
@@ -23,12 +26,14 @@ SRC_DIR = "android/src/com/crrank/autoharvest"
 
 
 def main():
-    files = list(FILES)
-    for name in sorted(os.listdir(os.path.join(HERE, SRC_DIR))):
-        if name.endswith(".java"):
-            files.append(f"{SRC_DIR}/{name}")
+    files = [f for f in FILES if os.path.isfile(os.path.join(HERE, f))]  # 舊版本沒有的檔案就跳過
+    src = os.path.join(HERE, SRC_DIR)
+    if os.path.isdir(src):
+        for name in sorted(os.listdir(src)):
+            if name.endswith(".java"):
+                files.append(f"{SRC_DIR}/{name}")
     parts = [
-        "CR Rank 自動收成器 — 全部原始碼",
+        "CR Rank 自動收成器 — 全部原始碼" + (f"（{VERSION}）" if VERSION else ""),
         f"產生時間：{time.strftime('%Y-%m-%d %H:%M:%S')}",
         "",
         "檔案清單：",

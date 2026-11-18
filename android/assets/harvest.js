@@ -41,8 +41,8 @@ if(c.mode=='auto'){var b=findBtn();if(b){var tx=b.textContent.trim();b.click();n
 else{var x=c.x*innerWidth/100,y=c.y*innerHeight/100;p.style.visibility='hidden';var el=document.elementFromPoint(x,y);p.style.visibility='';if(el){fire(el,x,y);n++;last='已點位置';}else last='位置沒有元素';}
 next=Date.now()+c.iv*1000;upd();}
 function upd(){q('data-s').textContent=(t?'執行中 · 下次 '+Math.max(0,Math.ceil((next-Date.now())/1000))+' 秒':'已停止')+' · 共 '+n+' 次'+(last?' · '+last:'');}
-function start(){if(t)return;doClick();t=setInterval(doClick,c.iv*1000);tick=setInterval(upd,1000);var g=q('data-go');g.textContent='停止';g.style.background='#ff6b6b';upd();}
-function stop(){clearInterval(t);clearInterval(tick);t=null;var g=q('data-go');g.textContent='開始';g.style.background='#ffc93c';upd();}
+function start(){if(t)return;c.run=true;save();doClick();t=setInterval(doClick,c.iv*1000);tick=setInterval(upd,1000);var g=q('data-go');g.textContent='停止';g.style.background='#ff6b6b';upd();}
+function stop(){c.run=false;save();clearInterval(t);clearInterval(tick);t=null;var g=q('data-go');g.textContent='開始';g.style.background='#ffc93c';upd();}
 q('data-go').onclick=function(){t?stop():start();};
 q('data-x').onclick=function(){stop();p.style.display='none';mk.style.display='none';};
 q('data-pk').onclick=function(){var ov=document.createElement('div');
@@ -57,18 +57,29 @@ hd.addEventListener('pointerup',function(){dr=false;save();});
 if(!c.buy)c.buy=[];if(!c.items)c.items=[];if(!c.bmode)c.bmode='restock';if(!c.bmin)c.bmin=10;
 var B={on:false,t:null,busy:false,log:'',next:0,at:0};
 function sleep(ms){return new Promise(function(r){setTimeout(r,ms);});}
+function waitFor(fn,ms){return new Promise(function(res){try{if(fn()){res(true);return;}}catch(e){}var done=false,tm=null;
+var ob=new MutationObserver(function(){try{if(!done&&fn()){done=true;ob.disconnect();clearTimeout(tm);res(true);}}catch(e){}});
+ob.observe(document.body,{subtree:true,childList:true,attributes:true,characterData:true});
+tm=setTimeout(function(){if(!done){done=true;ob.disconnect();var v=false;try{v=!!fn();}catch(e){}res(v);}},ms||8000);});}
+function stockText(nm){var cd=findCard(nm);if(!cd)return 'gone';var li=cd.btn.closest('li');return (li?li.textContent:'')+'|'+cd.btn.disabled;}
+function tabSel(t){return t&&t.getAttribute('aria-selected')=='true';}
 function shopDlg(){var ds=document.querySelectorAll('[role=dialog]');for(var i=0;i<ds.length;i++){var h=ds[i].querySelector('h1,h2,h3');if(h&&h.textContent.trim()=='商店')return ds[i];}return null;}
 function byText(sel,txt,root){var a=(root||document).querySelectorAll(sel);for(var i=0;i<a.length;i++){if(!p.contains(a[i])&&a[i].textContent.trim().indexOf(txt)==0)return a[i];}return null;}
-async function openShop(){var d=shopDlg();if(d)return{opened:false};var t0=byText('[role=tab]','商店');if(t0){t0.click();await sleep(700);if(shopDlg())return{opened:false};}var b=byText('button','物品');if(!b)return null;b.click();await sleep(800);var t=byText('[role=tab]','商店');if(t){t.click();await sleep(800);}return shopDlg()?{opened:true}:null;}
+async function openShop(){var d=shopDlg();if(d){await waitFor(shopReady,8000);return{opened:false};}var t0=byText('[role=tab]','商店');if(t0){t0.click();if(await waitFor(shopDlg,5000)){await waitFor(shopReady,8000);return{opened:false};}}var b=byText('button','物品');if(!b)return null;b.click();
+await waitFor(function(){return shopDlg()||byText('[role=tab]','商店');},6000);if(!shopDlg()){var t=byText('[role=tab]','商店');if(t){t.click();await waitFor(shopDlg,6000);}}if(!shopDlg())return null;await waitFor(shopReady,8000);return{opened:true};}
+function shopReady(){var d=shopDlg();return !!d&&(cards().length>0||/暫停營業|沒有商品/.test(d.textContent));}
 function closeShop(){var d=shopDlg();if(!d)return;var x=d.querySelector('button[title^="關閉"],button[aria-label^="關閉"]');if(x)x.click();}
 function cards(){var d=shopDlg(),out=[];if(!d)return out;var bs=d.querySelectorAll('button');for(var i=0;i<bs.length;i++){if(bs[i].textContent.trim()!='購買')continue;var li=bs[i].closest('li');var q=li&&li.querySelector('p');if(!q)continue;var nm='';for(var j=0;j<q.childNodes.length;j++){if(q.childNodes[j].nodeType==3)nm+=q.childNodes[j].textContent;}nm=nm.trim();var m=/庫存\s*[×x]\s*(\d+)/.exec(li.textContent);if(nm)out.push({name:nm,btn:bs[i],stock:m?+m[1]:1});}return out;}
 function findCard(nm){var cs=cards();for(var i=0;i<cs.length;i++){if(cs[i].name==nm)return cs[i];}return null;}
 async function eachCat(fn){var d=shopDlg();var tl=d&&(d.querySelector('[role=tablist][aria-label="商店分類"]')||d.querySelectorAll('[role=tablist]')[1]);var n=tl?tl.querySelectorAll('[role=tab]').length:0;if(!n){await fn();return;}
-for(var i=0;i<n;i++){d=shopDlg();if(!d)return;tl=d.querySelector('[role=tablist][aria-label="商店分類"]')||d.querySelectorAll('[role=tablist]')[1];if(!tl)return;tl.querySelectorAll('[role=tab]')[i].click();await sleep(700);await fn();}}
+for(var i=0;i<n;i++){d=shopDlg();if(!d)return;tl=d.querySelector('[role=tablist][aria-label="商店分類"]')||d.querySelectorAll('[role=tablist]')[1];if(!tl)return;var tb=tl.querySelectorAll('[role=tab]')[i];var was=tabSel(tb);tb.click();
+await waitFor(function(){var dd=shopDlg();var ll=dd&&(dd.querySelector('[role=tablist][aria-label="商店分類"]')||dd.querySelectorAll('[role=tablist]')[1]);var t2=ll&&ll.querySelectorAll('[role=tab]')[i];return !t2||tabSel(t2)||(was&&t2);},5000);
+await waitFor(shopReady,6000);await fn();}}
 function restockAt(){var d=shopDlg();var m=d&&/下次補貨\s*(\d+(?::\d+)+)/.exec(d.textContent);if(!m)return 0;var s=0,a=m[1].split(':');for(var i=0;i<a.length;i++)s=s*60+(+a[i]);return Date.now()+s*1000+5000;}
 async function buyRun(){if(B.busy)return;B.busy=true;bupd();var got=[];try{var o=await openShop();if(!o){B.log='打不開商店（先關掉其他視窗）';return;}
 await eachCat(async function(){var cs=cards();for(var i=0;i<cs.length;i++){var nm=cs[i].name;if(c.buy.indexOf(nm)<0)continue;var k=0,cap=Math.max(1,cs[i].stock);
-while(k<cap){var cd=findCard(nm);if(!cd||cd.btn.disabled)break;cd.btn.click();k++;await sleep(1000);}if(k)got.push(nm+' ×'+k);}});
+while(k<cap){var cd=findCard(nm);if(!cd||cd.btn.disabled)break;var before=stockText(nm);cd.btn.click();k++;
+await waitFor(function(){var s=stockText(nm);return s!=before&&!/\|true$/.test(s)||s=='gone'||(s!=before&&!/庫存/.test(s));},10000);}if(k)got.push(nm+' ×'+k);}});
 B.next=restockAt();if(o.opened)closeShop();B.log=got.length?'買到 '+got.join('、'):'沒有可買的（缺貨或已買完）';}
 catch(e){B.log='錯誤：'+e.message;}finally{B.busy=false;bupd();}}
 async function scanItems(){if(B.busy)return;B.busy=true;B.log='讀取中…';bupd();try{var o=await openShop();if(!o){B.log='打不開商店';return;}var names=[];
@@ -85,7 +96,11 @@ q('data-bt').onclick=function(){var bb=q('data-bb'),o=bb.style.display=='none';b
 q('data-br').onclick=scanItems;q('data-b1').onclick=function(){buyRun();};
 var bm=q('data-bm');bm.value=c.bmin;bm.onchange=function(){c.bmin=Math.max(1,parseFloat(bm.value)||10);bm.value=c.bmin;save();if(B.on)bsched();};
 var brs=p.querySelectorAll('input[name=cracb]');for(var bi=0;bi<brs.length;bi++){(function(r){r.checked=r.value==c.bmode;r.onchange=function(){c.bmode=r.value;save();if(B.on)bsched();};})(brs[bi]);}
-q('data-bg').onclick=function(){if(B.on){B.on=false;clearTimeout(B.t);bupd();return;}if(!c.buy.length){B.log='先勾選要買的商品';bupd();return;}B.on=true;buyRun().then(bsched);};
+function bstop(){B.on=false;c.bon=false;save();clearTimeout(B.t);bupd();}
+q('data-bg').onclick=function(){if(B.on){bstop();return;}if(!c.buy.length){B.log='先勾選要買的商品';bupd();return;}B.on=true;c.bon=true;save();buyRun().then(bsched);};
 setInterval(function(){if(B.on||B.busy)bupd();},1000);renderList();bupd();
+var oldX=q('data-x').onclick;q('data-x').onclick=function(){bstop();oldX();};
+if(c.run)setTimeout(start,1500);
+if(c.bon&&c.buy.length)setTimeout(function(){if(!B.on){B.on=true;B.log='自動接續';buyRun().then(bsched);}},4000);
 window.__crac={show:function(){p.style.display='';showMk();}};
 })();

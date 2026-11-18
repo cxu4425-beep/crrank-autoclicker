@@ -55,6 +55,27 @@ public class GameActivity extends Activity {
     }
 
     @Override
+    public boolean onCreateOptionsMenu(android.view.Menu menu) {
+        menu.add(0, 1, 0, "🌙 切到背景執行").setShowAsAction(android.view.MenuItem.SHOW_AS_ACTION_ALWAYS);
+        return true;
+    }
+
+    @Override
+    public boolean onOptionsItemSelected(android.view.MenuItem item) {
+        if (item.getItemId() != 1) return super.onOptionsItemSelected(item);
+        ClickService s = ClickService.inst;
+        if (s == null) {
+            android.widget.Toast.makeText(this, "要先開啟無障礙權限才能背景執行（App 主畫面「定點連點」分頁）",
+                    android.widget.Toast.LENGTH_LONG).show();
+            return true;
+        }
+        CookieManager.getInstance().flush();
+        finish();                 // 關掉前台的遊戲頁，換成背景視窗接手
+        s.startBg();
+        return true;
+    }
+
+    @Override
     protected void onSaveInstanceState(Bundle out) {
         super.onSaveInstanceState(out);
         w.saveState(out);

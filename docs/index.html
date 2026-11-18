@@ -137,7 +137,7 @@ footer{border-top:1px solid var(--line);padding:28px 0 40px;color:var(--muted);f
 <main class="wrap">
   <div class="hero">
     <div>
-      <span class="pill">目前版本 <b id="cur-ver">v1.3</b> · 免費、開源</span>
+      <span class="pill">目前版本 <b id="cur-ver">v1.4</b> · 免費、開源</span>
       <h1>知識領土的<span class="hl">自動收成</span>小幫手</h1>
       <p class="lead">定時幫你點「收成」、補貨時自動買商店的東西。電腦、Android、iPhone 都能用，設定一次就能一直掛著。</p>
       <div class="dl">
@@ -178,9 +178,9 @@ footer{border-top:1px solid var(--line);padding:28px 0 40px;color:var(--muted);f
       <div class="card"><div class="ic">⏰</div><h3>補貨時自動買</h3><p>商店每 30 分鐘（整點、半點）補貨，可設定補貨後幾秒去買，或每 N 分鐘檢查一次。</p></div>
       <div class="card"><div class="ic">💾</div><h3>3 個存檔＋輪播</h3><p>購買步驟自動存檔，可以存 3 組；開「自動輪播」就會做完存檔1接著做存檔2、存檔3。</p></div>
       <div class="card"><div class="ic">🖱️</div><h3>支援滾動</h3><p>商品在畫面下面看不到時，加一個滾動步驟先捲過去再買（電腦用滾輪、手機用滑動）。</p></div>
+      <div class="card"><div class="ic">🌙</div><h3>背景執行</h3><p>遊戲不用放在前台：開專用背景視窗（可以縮小、被蓋住），或直接在原本的分頁背景跑；重新整理後自動接續。</p></div>
       <div class="card"><div class="ic">📱</div><h3>手機遙控</h3><p>手機掃 QR Code，就能開始／停止另一台裝置的連點、改間隔，不用走回電腦前。</p></div>
       <div class="card"><div class="ic">🤖</div><h3>Android App</h3><p>功能和電腦版一樣：浮動控制鈕、全螢幕選位置，還有內建遊戲模式（不用開無障礙權限）。</p></div>
-      <div class="card"><div class="ic">📂</div><h3>單一檔案、開源</h3><p>電腦版只有一個 exe，不用安裝。可以匯出手機用的腳本和書籤，原始碼全部公開。</p></div>
     </div>
   </section>
 
@@ -195,6 +195,7 @@ footer{border-top:1px solid var(--line);padding:28px 0 40px;color:var(--muted);f
           <li>打開知識領土，在「電腦連點」分頁按「🎯 在螢幕上選位置」，點一下「收成」按鈕。</li>
           <li>設定間隔，按 <kbd>F9</kbd> 開始。</li>
           <li>要自動買東西：到「自動購買」分頁按「📋 建立購買範本」，照提示選位置，按 <kbd>F10</kbd>。</li>
+          <li>不想讓遊戲一直在前面：按「開啟背景遊戲視窗」，在裡面登入、用面板按開始，之後視窗可以縮小。</li>
         </ol>
         <a class="btn primary" href="https://github.com/cxu4425-beep/crrank-autoclicker/releases/latest/download/CRRank.exe">下載 CRRank.exe</a>
       </div>
@@ -205,6 +206,7 @@ footer{border-top:1px solid var(--line);padding:28px 0 40px;color:var(--muted);f
           <li>按「開啟無障礙權限設定」，打開「CR Rank 自動收成」。Android 13 以上開關是灰色的話：App 資訊 → 右上角 ⋮ →「允許受限制的設定」。</li>
           <li>用浮動鈕的 🎯 選位置，▶ 開始。</li>
           <li>不想開權限？用「內建遊戲」分頁，面板會自動出現。</li>
+          <li>想切去用別的 App：在內建遊戲按開始後，選「🌙 切到背景執行」。</li>
         </ol>
         <a class="btn primary" href="https://github.com/cxu4425-beep/crrank-autoclicker/releases/latest/download/CRRank-AutoHarvest.apk">下載 APK</a>
       </div>
@@ -233,7 +235,13 @@ footer{border-top:1px solid var(--line);padding:28px 0 40px;color:var(--muted);f
   <section id="faq">
     <h2>常見問題</h2>
     <details class="faq"><summary>遊戲一定要放在前面嗎？</summary>
-      <p>照螢幕位置點的模式（電腦版連點、自動購買分頁）要看得到遊戲畫面，視窗不能被擋住。用網頁面板（書籤／使用者腳本／Android 內建遊戲）就是直接點網頁上的按鈕，分頁放在背景也會繼續跑，只是 Chrome 會把收成和檢查的間隔拉長到大約 1 分鐘一次。</p></details>
+      <p>不用。照螢幕位置點的模式（電腦版連點、自動購買分頁）才需要看得到遊戲畫面。想在背景跑有兩種方式：</p>
+      <ul>
+        <li><b>背景遊戲視窗</b>（推薦）：電腦版按「開啟背景遊戲視窗」，會開一個關掉背景節流的專用 Chrome／Edge 視窗，可以縮小或被蓋住，速度不受影響；期間電腦不會自動睡眠。Android 用「🌙 在背景執行遊戲」。</li>
+        <li><b>原本的分頁</b>：用書籤叫出面板後切去別的分頁也會繼續跑。自動購買照常速度，但 Chrome 會把收成和檢查的間隔拉長到大約 1 分鐘一次；建議在 Chrome 設定 → 效能 →「一律保持這些網站處於活躍狀態」加入 crrank.xpgs25.com。</li>
+      </ul></details>
+    <details class="faq"><summary>為什麼背景模式要另外開一個視窗、另外登入？</summary>
+      <p>關掉背景節流只能在瀏覽器啟動時設定，而自動放回面板需要的除錯功能，新版 Chrome 不允許在你平常用的設定檔上開（為了保護登入資料），所以用一個獨立的設定檔。</p></details>
     <details class="faq"><summary>手機上要注意什麼？</summary>
       <p>手機的瀏覽器在鎖定畫面或切到別的 App 時會暫停，請讓螢幕保持亮著、遊戲分頁留在前面（可以把亮度調低省電）。</p></details>
     <details class="faq"><summary>第一次用自動購買要怎麼確認設定對不對？</summary>
@@ -255,7 +263,20 @@ footer{border-top:1px solid var(--line);padding:28px 0 40px;color:var(--muted);f
     <div class="log">
 
       <div class="ver latest">
-        <h3>v1.3 <span class="date">2026-11-18</span> <span class="badge">最新</span></h3>
+        <h3>v1.4 <span class="date">2026-11-19</span> <span class="badge">最新</span></h3>
+        <p class="sum">背景模式：遊戲不用一直放在前台。</p>
+        <ul>
+          <li>🌙 電腦版「開啟背景遊戲視窗」：專用 Chrome／Edge 視窗關掉背景節流，縮小或被蓋住照樣跑，自動放進面板，期間電腦不睡眠</li>
+          <li>🤖 Android「在背景執行遊戲」：遊戲在看不見的視窗繼續跑，可以切去用別的 App；浮動鈕 🌙 顯示／隱藏、長按關閉</li>
+          <li>⚡ 面板的自動購買改成「等畫面變化」再做下一步，在原本分頁背景跑也是正常速度</li>
+          <li>🔄 面板會記住收成／自動購買是否在執行，重新整理後自動接續</li>
+          <li>修正：打開商店時商品還沒載入就讀取，可能讀到 0 樣的問題</li>
+        </ul>
+        <a class="rel" href="https://github.com/cxu4425-beep/crrank-autoclicker/releases/tag/v1.4">查看 v1.4 →</a>
+      </div>
+
+      <div class="ver">
+        <h3>v1.3 <span class="date">2026-11-18</span></h3>
         <p class="sum">自動購買可以存檔、輪播，還能先捲動再買。</p>
         <ul>
           <li>💾 3 個存檔（存檔1／2／3，可改名、清空），步驟有任何變動都會自動存檔</li>

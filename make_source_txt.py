@@ -9,6 +9,7 @@ FILES = [
     "crrank_clicker.py",
     "make_source_txt.py",
     "README.md",
+    "docs/index.html",
     ".gitignore",
     "android/build.ps1",
     "android/AndroidManifest.xml",

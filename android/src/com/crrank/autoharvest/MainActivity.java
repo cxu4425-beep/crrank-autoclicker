@@ -579,6 +579,21 @@ public class MainActivity extends Activity {
         Button b = btn("▶ 開啟知識領土（內建自動收成）", v -> startActivity(new Intent(this, GameActivity.class)));
         b.setTextSize(17);
         p.addView(b, new LinearLayout.LayoutParams(-1, dp(60)));
+        p.addView(sep());
+        p.addView(label("🌙 背景執行（遊戲不用放在前台）", 16, true));
+        p.addView(hint("先用上面的按鈕打開遊戲、登入，在面板設定好收成和「🛒 自動購買」並按開始；再按下面的按鈕（或遊戲畫面右上角選單「切到背景執行」）。"
+                + "遊戲會在看不見的視窗裡繼續跑，面板會自動接續剛剛的設定，你可以切去用別的 App。"
+                + "浮動鈕 🌙 點一下可以顯示／隱藏，長按關閉。需要開啟無障礙權限；螢幕關掉時是否繼續跑，要看手機的省電設定。"));
+        p.addView(btn("🌙 在背景執行遊戲", v -> {
+            if (needService()) return;
+            ClickService.inst.startBg();
+            moveTaskToBack(true);
+        }));
+        p.addView(btn("關閉背景遊戲", v -> {
+            ClickService s = ClickService.inst;
+            if (s != null && s.bgRunning()) s.stopBg();
+            else Toast.makeText(this, "背景遊戲沒有在執行", Toast.LENGTH_SHORT).show();
+        }));
         return p;
     }
 

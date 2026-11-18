@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CR Rank 自動收成器</title>
+<meta name="description" content="知識領土的小幫手：自動收成、自動購買，電腦、Android、iPhone 都能用。非官方工具。">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Ccircle cx='24' cy='24' r='22' fill='%23FFC93C'/%3E%3Ccircle cx='24' cy='24' r='14' fill='%231E2230'/%3E%3Ccircle cx='24' cy='24' r='9' fill='%23FFC93C'/%3E%3Cpath d='M22 19h4v3h3v4h-3v3h-4v-3h-3v-4h3z' fill='%231E2230'/%3E%3C/svg%3E">
+<style>
+:root{
+  --bg:#f7f5ef; --surface:#ffffff; --surface2:#f1eee4; --ink:#1e2230; --muted:#5d6272;
+  --line:#e2ddcf; --accent:#ffc93c; --accent-ink:#1e2230; --blue:#2f6fde; --blue-soft:#e6eefc;
+  --green:#2a8a4a; --green-soft:#e3f4e8; --warn:#9a5b00; --warn-soft:#fff3d6; --shadow:0 1px 2px rgba(30,34,48,.06),0 8px 24px rgba(30,34,48,.06);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#13151d; --surface:#1c1f2a; --surface2:#232736; --ink:#eceef4; --muted:#a3a8b8;
+    --line:#2e3344; --accent:#ffc93c; --accent-ink:#1e2230; --blue:#7aa7ff; --blue-soft:#1f2a44;
+    --green:#6fd08f; --green-soft:#1b3326; --warn:#ffcf70; --warn-soft:#3a2f14; --shadow:0 1px 2px rgba(0,0,0,.3),0 8px 24px rgba(0,0,0,.25);
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#13151d; --surface:#1c1f2a; --surface2:#232736; --ink:#eceef4; --muted:#a3a8b8;
+  --line:#2e3344; --accent:#ffc93c; --accent-ink:#1e2230; --blue:#7aa7ff; --blue-soft:#1f2a44;
+  --green:#6fd08f; --green-soft:#1b3326; --warn:#ffcf70; --warn-soft:#3a2f14; --shadow:0 1px 2px rgba(0,0,0,.3),0 8px 24px rgba(0,0,0,.25);
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.7 "Noto Sans TC","Microsoft JhengHei","PingFang TC",system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+a{color:var(--blue)}
+.wrap{max-width:1040px;margin:0 auto;padding:0 20px}
+header.top{position:sticky;top:0;z-index:10;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+header.top .wrap{display:flex;align-items:center;gap:16px;height:58px}
+.brand{display:flex;align-items:center;gap:10px;font-weight:800;text-decoration:none;color:var(--ink);white-space:nowrap}
+.brand svg{width:28px;height:28px;flex:none}
+nav.links{display:flex;gap:18px;margin-left:auto;font-size:15px}
+nav.links a{color:var(--muted);text-decoration:none}
+nav.links a:hover{color:var(--ink)}
+.theme{border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:8px;width:36px;height:36px;cursor:pointer;font-size:16px;flex:none}
+
+.hero{padding:64px 0 40px;display:grid;grid-template-columns:1.15fr .85fr;gap:40px;align-items:center}
+.pill{display:inline-flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:4px 12px;font-size:13px;color:var(--muted)}
+.pill b{color:var(--green)}
+h1{font-size:clamp(32px,5vw,48px);line-height:1.15;margin:16px 0 14px;letter-spacing:-.5px}
+h1 .hl{background:linear-gradient(transparent 62%,color-mix(in srgb,var(--accent) 70%,transparent) 62%)}
+.lead{font-size:18px;color:var(--muted);margin:0 0 26px;max-width:34em}
+.dl{display:flex;flex-wrap:wrap;gap:10px}
+.btn{display:inline-flex;align-items:center;gap:8px;padding:12px 18px;border-radius:10px;font-weight:700;text-decoration:none;border:1px solid var(--line);background:var(--surface);color:var(--ink);font-size:15px}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:transparent}
+.btn small{font-weight:500;opacity:.75}
+.sub{margin-top:14px;font-size:13px;color:var(--muted)}
+
+/* 面板示意 */
+.mock{background:#1e2230;color:#fff;border-radius:16px;padding:16px;box-shadow:var(--shadow);font-size:14px;line-height:1.8;max-width:330px;justify-self:center;width:100%}
+.mock .t{font-weight:700;display:flex;justify-content:space-between}
+.mock .row{display:flex;align-items:center;gap:8px}
+.mock .in{background:#fff;color:#222;border-radius:4px;padding:0 8px;min-width:64px;display:inline-block}
+.mock .go{margin-top:8px;background:#ff6b6b;color:#222;font-weight:800;text-align:center;border-radius:8px;padding:8px}
+.mock .st{font-size:12px;opacity:.85;margin-top:6px}
+.mock .sep{border-top:1px solid #3a4052;margin:10px 0 6px}
+.mock .ck{display:inline-block;width:13px;height:13px;border-radius:3px;background:#8fd3ff;margin-right:6px;vertical-align:-1px}
+.mock .ck.off{background:transparent;border:1.5px solid #8b93a8}
+.mock .go2{margin-top:6px;background:#8fd3ff;color:#222;font-weight:800;text-align:center;border-radius:8px;padding:6px}
+.mock-cap{text-align:center;font-size:12px;color:var(--muted);margin-top:8px}
+
+section{padding:56px 0;border-top:1px solid var(--line)}
+h2{font-size:28px;margin:0 0 8px;letter-spacing:-.3px}
+.sec-lead{color:var(--muted);margin:0 0 28px}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:20px;box-shadow:var(--shadow)}
+.card .ic{font-size:26px;line-height:1}
+.card h3{margin:10px 0 6px;font-size:17px}
+.card p{margin:0;color:var(--muted);font-size:15px}
+
+.plats{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.plat h3{margin:0 0 4px;font-size:18px;display:flex;align-items:center;gap:8px}
+.plat .tag{font-size:12px;font-weight:600;color:var(--muted)}
+.plat ol{margin:10px 0 0;padding-left:20px;color:var(--muted);font-size:15px}
+.plat ol li{margin:4px 0}
+.plat .btn{margin-top:14px}
+
+.keys{display:flex;flex-wrap:wrap;gap:12px}
+.key{display:flex;align-items:center;gap:10px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 16px}
+kbd{font:700 14px ui-monospace,Consolas,monospace;background:var(--surface2);border:1px solid var(--line);border-bottom-width:3px;border-radius:6px;padding:2px 8px}
+
+details.faq{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 18px;margin-bottom:10px}
+details.faq summary{font-weight:700;cursor:pointer}
+details.faq p,details.faq ul{color:var(--muted);margin:10px 0 0;font-size:15px}
+
+.notice{background:var(--warn-soft);color:var(--warn);border-radius:12px;padding:14px 18px;font-size:15px}
+
+/* 更新日誌 */
+.log{position:relative;margin-left:8px;padding-left:28px;border-left:2px solid var(--line)}
+.ver{position:relative;margin-bottom:28px}
+.ver::before{content:"";position:absolute;left:-36px;top:6px;width:14px;height:14px;border-radius:50%;background:var(--surface);border:3px solid var(--line)}
+.ver.latest::before{border-color:var(--accent);background:var(--accent)}
+.ver h3{margin:0;font-size:20px;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.ver .date{font-size:14px;font-weight:500;color:var(--muted)}
+.ver .badge{font-size:12px;font-weight:700;background:var(--green-soft);color:var(--green);border-radius:999px;padding:2px 10px}
+.ver .sum{margin:4px 0 8px;color:var(--ink)}
+.ver ul{margin:0;padding-left:20px;color:var(--muted);font-size:15px}
+.ver ul li{margin:3px 0}
+.ver .rel{font-size:14px}
+
+footer{border-top:1px solid var(--line);padding:28px 0 40px;color:var(--muted);font-size:14px}
+
+@media (max-width:860px){
+  .hero{grid-template-columns:1fr;padding-top:40px}
+  .grid,.plats{grid-template-columns:1fr 1fr}
+  nav.links{display:none}
+}
+@media (max-width:560px){
+  .grid,.plats{grid-template-columns:1fr}
+  .wrap{padding:0 16px}
+  h2{font-size:24px}
+}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="#">
+      <svg viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r="22" fill="#FFC93C"/><circle cx="24" cy="24" r="14" fill="#1E2230"/><circle cx="24" cy="24" r="9" fill="#FFC93C"/><path d="M22 19h4v3h3v4h-3v3h-4v-3h-3v-4h3z" fill="#1E2230"/></svg>
+      CR Rank 自動收成器
+    </a>
+    <nav class="links">
+      <a href="#features">功能</a>
+      <a href="#download">下載與使用</a>
+      <a href="#faq">常見問題</a>
+      <a href="#changelog">更新日誌</a>
+    </nav>
+    <button class="theme" id="theme" aria-label="切換深色／淺色">◐</button>
+  </div>
+</header>
+
+<main class="wrap">
+  <div class="hero">
+    <div>
+      <span class="pill">目前版本 <b id="cur-ver">v1.3</b> · 免費、開源</span>
+      <h1>知識領土的<span class="hl">自動收成</span>小幫手</h1>
+      <p class="lead">定時幫你點「收成」、補貨時自動買商店的東西。電腦、Android、iPhone 都能用，設定一次就能一直掛著。</p>
+      <div class="dl">
+        <a class="btn primary" href="https://github.com/cxu4425-beep/crrank-autoclicker/releases/latest/download/CRRank.exe">💻 下載 Windows 版 <small>.exe</small></a>
+        <a class="btn" href="https://github.com/cxu4425-beep/crrank-autoclicker/releases/latest/download/CRRank-AutoHarvest.apk">🤖 下載 Android 版 <small>.apk</small></a>
+        <a class="btn" href="#iphone">🍎 iPhone 用法</a>
+      </div>
+      <p class="sub">下載的永遠是最新版。原始碼在 <a href="https://github.com/cxu4425-beep/crrank-autoclicker">GitHub</a>。</p>
+    </div>
+    <div>
+      <div class="mock" aria-label="遊戲頁上的面板示意圖">
+        <div class="t"><span>☰ 自動收成</span><span>✕</span></div>
+        <div class="row">間隔(秒) <span class="in">60</span></div>
+        <div>◉ 自動找「收成」按鈕</div>
+        <div style="opacity:.7">○ 點自訂位置</div>
+        <div class="go">停止</div>
+        <div class="st">執行中 · 下次 42 秒 · 共 18 次 · 已收成 +24/11</div>
+        <div class="sep"></div>
+        <div style="font-weight:700">🛒 自動購買 ▴</div>
+        <div><span class="ck"></span>能量藥水</div>
+        <div><span class="ck"></span>素材寶箱</div>
+        <div><span class="ck off"></span>修復小槌</div>
+        <div>◉ 每次補貨後買</div>
+        <div class="go2">停止自動購買</div>
+        <div class="st">執行中 · 下次 12:05 · 買到 能量藥水 ×2</div>
+      </div>
+      <div class="mock-cap">遊戲頁上出現的控制面板（示意圖）</div>
+    </div>
+  </div>
+
+  <section id="features">
+    <h2>功能</h2>
+    <p class="sec-lead">兩種點法都有：照螢幕位置點（像真的滑鼠），或直接在網頁裡找到按鈕點。</p>
+    <div class="grid">
+      <div class="card"><div class="ic">🌾</div><h3>自動收成</h3><p>自訂間隔（秒／分／時）、隨機誤差、次數上限。可以自動找「收成」按鈕，沒東西可收時會跳過。</p></div>
+      <div class="card"><div class="ic">🎯</div><h3>自訂點擊位置</h3><p>在螢幕上點一下就記住位置，電腦版也能把滑鼠移過去按 F8 記錄。</p></div>
+      <div class="card"><div class="ic">🛒</div><h3>自動購買</h3><p>勾選要買的商品，或照順序點「物品 → 商店 → 分類 → 購買」。每樣最多買到庫存數量，缺貨就停。</p></div>
+      <div class="card"><div class="ic">⏰</div><h3>補貨時自動買</h3><p>商店每 30 分鐘（整點、半點）補貨，可設定補貨後幾秒去買，或每 N 分鐘檢查一次。</p></div>
+      <div class="card"><div class="ic">💾</div><h3>3 個存檔＋輪播</h3><p>購買步驟自動存檔，可以存 3 組；開「自動輪播」就會做完存檔1接著做存檔2、存檔3。</p></div>
+      <div class="card"><div class="ic">🖱️</div><h3>支援滾動</h3><p>商品在畫面下面看不到時，加一個滾動步驟先捲過去再買（電腦用滾輪、手機用滑動）。</p></div>
+      <div class="card"><div class="ic">📱</div><h3>手機遙控</h3><p>手機掃 QR Code，就能開始／停止另一台裝置的連點、改間隔，不用走回電腦前。</p></div>
+      <div class="card"><div class="ic">🤖</div><h3>Android App</h3><p>功能和電腦版一樣：浮動控制鈕、全螢幕選位置，還有內建遊戲模式（不用開無障礙權限）。</p></div>
+      <div class="card"><div class="ic">📂</div><h3>單一檔案、開源</h3><p>電腦版只有一個 exe，不用安裝。可以匯出手機用的腳本和書籤，原始碼全部公開。</p></div>
+    </div>
+  </section>
+
+  <section id="download">
+    <h2>下載與使用</h2>
+    <p class="sec-lead">選你的裝置，照著做就好。</p>
+    <div class="plats">
+      <div class="card plat">
+        <h3>💻 Windows</h3><span class="tag">Windows 10／11</span>
+        <ol>
+          <li>下載 <code>CRRank.exe</code>，直接打開（不用安裝）。</li>
+          <li>打開知識領土，在「電腦連點」分頁按「🎯 在螢幕上選位置」，點一下「收成」按鈕。</li>
+          <li>設定間隔，按 <kbd>F9</kbd> 開始。</li>
+          <li>要自動買東西：到「自動購買」分頁按「📋 建立購買範本」，照提示選位置，按 <kbd>F10</kbd>。</li>
+        </ol>
+        <a class="btn primary" href="https://github.com/cxu4425-beep/crrank-autoclicker/releases/latest/download/CRRank.exe">下載 CRRank.exe</a>
+      </div>
+      <div class="card plat">
+        <h3>🤖 Android</h3><span class="tag">Android 7.0 以上</span>
+        <ol>
+          <li>下載安裝 <code>CRRank-AutoHarvest.apk</code>（要允許安裝未知來源的 App）。</li>
+          <li>按「開啟無障礙權限設定」，打開「CR Rank 自動收成」。Android 13 以上開關是灰色的話：App 資訊 → 右上角 ⋮ →「允許受限制的設定」。</li>
+          <li>用浮動鈕的 🎯 選位置，▶ 開始。</li>
+          <li>不想開權限？用「內建遊戲」分頁，面板會自動出現。</li>
+        </ol>
+        <a class="btn primary" href="https://github.com/cxu4425-beep/crrank-autoclicker/releases/latest/download/CRRank-AutoHarvest.apk">下載 APK</a>
+      </div>
+      <div class="card plat" id="iphone">
+        <h3>🍎 iPhone／iPad</h3><span class="tag">Safari 書籤</span>
+        <ol>
+          <li>iPhone 和電腦（或 Android）連同一個 Wi-Fi，用相機掃程式「手機」分頁的 QR Code。</li>
+          <li>照頁面裡的 iPhone 教學：複製書籤碼 → 加入書籤 → 把書籤網址換成書籤碼。</li>
+          <li>打開知識領土，點書籤「收成」，面板就會出現。</li>
+          <li>設定 → 螢幕顯示與亮度 → 自動鎖定改成「永不」，畫面才不會暫停。</li>
+        </ol>
+      </div>
+    </div>
+  </section>
+
+  <section id="keys">
+    <h2>電腦版快捷鍵</h2>
+    <p class="sec-lead">在任何視窗都有效。</p>
+    <div class="keys">
+      <div class="key"><kbd>F8</kbd> 把滑鼠位置記下來</div>
+      <div class="key"><kbd>F9</kbd> 開始／停止自動收成</div>
+      <div class="key"><kbd>F10</kbd> 開始／停止自動購買</div>
+    </div>
+  </section>
+
+  <section id="faq">
+    <h2>常見問題</h2>
+    <details class="faq"><summary>遊戲一定要放在前面嗎？</summary>
+      <p>照螢幕位置點的模式（電腦版連點、自動購買分頁）要看得到遊戲畫面，視窗不能被擋住。用網頁面板（書籤／使用者腳本／Android 內建遊戲）就是直接點網頁上的按鈕，分頁放在背景也會繼續跑，只是 Chrome 會把收成和檢查的間隔拉長到大約 1 分鐘一次。</p></details>
+    <details class="faq"><summary>手機上要注意什麼？</summary>
+      <p>手機的瀏覽器在鎖定畫面或切到別的 App 時會暫停，請讓螢幕保持亮著、遊戲分頁留在前面（可以把亮度調低省電）。</p></details>
+    <details class="faq"><summary>第一次用自動購買要怎麼確認設定對不對？</summary>
+      <p>先勾一樣便宜的商品（例如能量藥水），按「立即買一次（測試）」看看有沒有點對位置、買到東西，再按開始。</p></details>
+    <details class="faq"><summary>Windows 說這個檔案不常見、跳出警告？</summary>
+      <p>因為程式沒有買數位簽章，Windows SmartScreen 可能會提醒。按「其他資訊 → 仍要執行」即可；不放心的話可以看 GitHub 上的原始碼自己打包。第一次開啟時防火牆詢問要按「允許」，手機遙控才連得到。</p></details>
+    <details class="faq"><summary>會收集我的資料嗎？</summary>
+      <p>不會。程式只在你的電腦／手機上執行，手機遙控只在你家的區網內連線，而且連結帶有隨機密碼。</p></details>
+  </section>
+
+  <section>
+    <div class="notice">⚠️ 這是玩家自製的<strong>非官方</strong>工具，和 CR Rank 官方無關。自動點擊可能違反遊戲規則，請自行斟酌，使用風險自負。</div>
+  </section>
+
+  <!-- ========== 更新日誌：每發一個新版本就在最上面加一筆 ========== -->
+  <section id="changelog">
+    <h2>更新日誌</h2>
+    <p class="sec-lead">每個版本新增了什麼。下載舊版請到 <a href="https://github.com/cxu4425-beep/crrank-autoclicker/releases">GitHub Releases</a>。</p>
+    <div class="log">
+
+      <div class="ver latest">
+        <h3>v1.3 <span class="date">2026-11-18</span> <span class="badge">最新</span></h3>
+        <p class="sum">自動購買可以存檔、輪播，還能先捲動再買。</p>
+        <ul>
+          <li>💾 3 個存檔（存檔1／2／3，可改名、清空），步驟有任何變動都會自動存檔</li>
+          <li>🔁 自動輪播：每次執行做完存檔1接著做存檔2、存檔3，空的存檔會跳過</li>
+          <li>🖱️ 滾動步驟：商品在下面看不到時先捲過去，可設方向和格數</li>
+          <li>步驟列表多了「動作」欄（點擊／滾動↓3格）</li>
+        </ul>
+        <a class="rel" href="https://github.com/cxu4425-beep/crrank-autoclicker/releases/tag/v1.3">查看 v1.3 →</a>
+      </div>
+
+      <div class="ver">
+        <h3>v1.2 <span class="date">2026-11-18</span></h3>
+        <p class="sum">電腦版和 Android 加入「自動購買」分頁。</p>
+        <ul>
+          <li>🛒 照順序模擬點擊螢幕位置：打開物品 → 商店 → 分類 → 購買 → 關閉商店</li>
+          <li>📋 一鍵建立購買範本＋「依序選全部」引導選位置，電腦版可用 F8 記錄</li>
+          <li>⏰ 可設「每次補貨後（整點、半點）」或「每 N 分鐘」執行</li>
+          <li>⌨️ 電腦版 F10 開始／停止；Android 浮動鈕新增 🛒</li>
+          <li>📄 每次更新提供全部原始碼的 txt 檔</li>
+        </ul>
+        <a class="rel" href="https://github.com/cxu4425-beep/crrank-autoclicker/releases/tag/v1.2">查看 v1.2 →</a>
+      </div>
+
+      <div class="ver">
+        <h3>v1.1 <span class="date">2026-11-18</span></h3>
+        <p class="sum">網頁面板加入自動購買。</p>
+        <ul>
+          <li>🛒 「讀取商品」自動打開商店讀出所有商品，勾選要買的</li>
+          <li>⏰ 補貨後自動買（讀取「下次補貨」倒數），或每 N 分鐘檢查</li>
+          <li>每樣最多買到庫存數量，缺貨／已買完／錢不夠就停，買完自動關掉商店</li>
+          <li>🍎 控制頁加入 iPhone（Safari）和 Android 的圖文設定教學</li>
+        </ul>
+        <a class="rel" href="https://github.com/cxu4425-beep/crrank-autoclicker/releases/tag/v1.1">查看 v1.1 →</a>
+      </div>
+
+      <div class="ver">
+        <h3>v1.0 <span class="date">2026-11-13</span></h3>
+        <p class="sum">第一版：電腦版和 Android App。</p>
+        <ul>
+          <li>💻 Windows 單一 exe：自訂位置與間隔自動點「收成」，F8 記錄位置、F9 開始／停止</li>
+          <li>📱 手機控制頁：書籤／使用者腳本在手機瀏覽器自動收成，也能遙控電腦</li>
+          <li>🤖 Android App：無障礙定點連點、浮動控制鈕、區網遙控、內建遊戲模式</li>
+          <li>📂 可以匯出手機用的腳本、書籤碼和說明</li>
+        </ul>
+        <a class="rel" href="https://github.com/cxu4425-beep/crrank-autoclicker/releases/tag/v1.0">查看 v1.0 →</a>
+      </div>
+
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">CR Rank 自動收成器 · 非官方玩家工具 · <a href="https://github.com/cxu4425-beep/crrank-autoclicker">GitHub</a></div>
+</footer>
+
+<script>
+(function () {
+  var root = document.documentElement, KEY = 'crrank-site-theme';
+  try { var t = localStorage.getItem(KEY); if (t) root.setAttribute('data-theme', t); } catch (e) {}
+  document.getElementById('theme').onclick = function () {
+    var dark = root.getAttribute('data-theme') ? root.getAttribute('data-theme') === 'dark'
+      : matchMedia('(prefers-color-scheme: dark)').matches;
+    var next = dark ? 'light' : 'dark';
+    root.setAttribute('data-theme', next);
+    try { localStorage.setItem(KEY, next); } catch (e) {}
+  };
+})();
+</script>
+</body>
+</html>

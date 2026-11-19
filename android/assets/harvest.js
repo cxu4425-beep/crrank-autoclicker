@@ -6,7 +6,7 @@ function save(){try{localStorage.setItem(K,JSON.stringify(c));}catch(e){}}
 var t=null,tick=null,n=0,next=0,last='';
 var p=document.createElement('div');
 p.style.cssText='position:fixed;z-index:2147483647;background:#1e2230;color:#fff;font:14px sans-serif;padding:10px;border-radius:12px;box-shadow:0 4px 18px rgba(0,0,0,.45);width:220px;max-height:85vh;overflow:auto;touch-action:none;line-height:1.7';
-p.innerHTML='<div data-h style="font-weight:bold;cursor:move;user-select:none">&#9776; 自動收成 <span style="font-weight:normal;font-size:11px;opacity:.6">v1.5</span><span data-x style="float:right;cursor:pointer;padding:0 4px">&#10005;</span></div>'+
+p.innerHTML='<div data-h style="font-weight:bold;cursor:move;user-select:none">&#9776; 自動收成 <span style="font-weight:normal;font-size:11px;opacity:.6">v1.6</span><span data-x style="float:right;cursor:pointer;padding:0 4px">&#10005;</span></div>'+
 '<label>間隔(秒) <input data-iv type="number" min="1" style="width:80px;font-size:14px"></label><br>'+
 '<label title="從資源列讀每小時產量，在金幣或建材快滿（90%）之前才收"><input type="checkbox" data-sm> 聰明間隔（快滿前才收）</label><br>'+
 '<label><input type="radio" name="cracm" value="auto"> 自動找「收成」按鈕</label><br>'+
@@ -132,7 +132,7 @@ for(var k=0;k<40;k++){var bs=claimBtns(dlgWithTab('成就'));if(!bs.length)break
 await waitFor(function(){return !document.contains(btn)||btn.textContent.trim()!='領取'||(!btn.disabled&&btn.closest('li,div').textContent!=before);},8000);}}
 if(opened){var dd=dlgWithTab('成就');var x=dd&&dd.querySelector('button[title^="關閉"],button[aria-label^="關閉"]');if(x)x.click();}
 X.log=new Date().toTimeString().slice(0,5)+' '+(got?'領取了 '+got+' 個獎勵':'沒有可以領的');}catch(e){X.log='錯誤：'+e.message;}finally{X.busy=false;xupd();}}
-function clSched(){clearTimeout(X.t);if(!c.cl)return;X.t=setTimeout(function(){claimAll().then(clSched);},Math.max(5,c.clm)*60000);}
+function clSched(){clearTimeout(X.t);if(!c.cl)return;var ms=Math.max(5,c.clm)*60000;X.at=Date.now()+ms;X.t=setTimeout(function(){claimAll().then(clSched);},ms);}
 function energy(){var el=document.querySelector('[title^="能量"]');if(!el)return null;var m=/([\d,]+)\s*\/\s*([\d,]+)/.exec(el.textContent);return m?{cur:num(m[1]),max:num(m[2])}:null;}
 function notify(tt,body){var ok=false;try{if(window.CRAndroid&&CRAndroid.notify){CRAndroid.notify(tt,body);ok=true;}else if('Notification' in window&&Notification.permission=='granted'){new Notification(tt,{body:body});ok=true;}}catch(e){}
 if(c.wh&&/^https:\/\/(canary\.|ptb\.)?(discord|discordapp)\.com\/api\/webhooks\//.test(c.wh)){var fd=new FormData();fd.append('content','**'+tt+'** '+body);fetch(c.wh,{method:'POST',mode:'no-cors',body:fd}).catch(function(){});ok=true;}
@@ -153,5 +153,11 @@ q('data-nt').onclick=function(){askPerm();setTimeout(function(){notify('測試�
 if(c.cl)setTimeout(function(){claimAll().then(clSched);},10000);
 if(c.run)setTimeout(start,1500);
 if(c.bon&&c.buy.length)setTimeout(function(){if(!B.on){B.on=true;B.log='自動接續';buyRun().then(bsched);}},4000);
-window.__crac={show:function(){p.style.display='';showMk();}};
+/* 喚醒：擴充功能每 30 秒叫一次，把被背景節流拖延的工作補做 */
+function wake(){var now=Date.now();p.setAttribute('data-last-tick',String(now));
+if(t&&t!==-1&&next&&now>=next+1000)arm(doClick());
+if(B.on&&!B.busy&&B.at&&now>=B.at+1000){clearTimeout(B.t);buyRun().then(bsched);}
+if(c.cl&&!X.busy&&X.at&&now>=X.at+1000){clearTimeout(X.t);claimAll().then(clSched);}
+checkEnergy();}
+window.__crac={show:function(){p.style.display='';showMk();},tick:wake};
 })();

@@ -139,7 +139,7 @@ footer{border-top:1px solid var(--line);padding:28px 0 40px;color:var(--muted);f
 <main class="wrap">
   <div class="hero">
     <div>
-      <span class="pill">目前版本 <b id="cur-ver">v1.5</b> · 免費、開源</span>
+      <span class="pill">目前版本 <b id="cur-ver">v1.6</b> · 免費、開源</span>
       <h1>知識領土的<span class="hl">自動收成</span>小幫手</h1>
       <p class="lead">定時幫你點「收成」、補貨時自動買商店的東西。電腦、Android、iPhone 都能用，設定一次就能一直掛著。</p>
       <div class="dl">
@@ -182,7 +182,7 @@ footer{border-top:1px solid var(--line);padding:28px 0 40px;color:var(--muted);f
       <div class="card"><div class="ic">⏰</div><h3>補貨時自動買</h3><p>商店每 30 分鐘（整點、半點）補貨，可設定補貨後幾秒去買，或每 N 分鐘檢查一次。</p></div>
       <div class="card"><div class="ic">💾</div><h3>3 個存檔＋輪播</h3><p>購買步驟自動存檔，可以存 3 組；開「自動輪播」就會做完存檔1接著做存檔2、存檔3。</p></div>
       <div class="card"><div class="ic">🖱️</div><h3>支援滾動</h3><p>商品在畫面下面看不到時，加一個滾動步驟先捲過去再買（電腦用滾輪、手機用滑動）。</p></div>
-      <div class="card"><div class="ic">🌙</div><h3>背景執行</h3><p>遊戲不用放在前台：開專用背景視窗（可以縮小、被蓋住），或直接在原本的分頁背景跑；重新整理後自動接續。</p></div>
+      <div class="card"><div class="ic">🌙</div><h3>背景執行</h3><p>遊戲不用放在前台：裝一次擴充功能，在你原本的 Chrome／Edge（不用重新登入）背景照常收成、購買、領取，分頁也不會被卸載。</p></div>
       <div class="card"><div class="ic">📱</div><h3>手機遙控</h3><p>手機掃 QR Code，就能開始／停止另一台裝置的連點、改間隔，不用走回電腦前。</p></div>
       <div class="card"><div class="ic">🔄</div><h3>自動更新</h3><p>電腦版開啟時檢查新版，按一下就自己下載、替換、重開；Android 會提示下載新的 APK。</p></div>
       <div class="card"><div class="ic">🤖</div><h3>Android App</h3><p>功能和電腦版一樣：浮動控制鈕、全螢幕選位置，還有內建遊戲模式（不用開無障礙權限）。</p></div>
@@ -200,7 +200,7 @@ footer{border-top:1px solid var(--line);padding:28px 0 40px;color:var(--muted);f
           <li>打開知識領土，在「電腦連點」分頁按「🎯 在螢幕上選位置」，點一下「收成」按鈕。</li>
           <li>設定間隔，按 <kbd>F9</kbd> 開始。</li>
           <li>要自動買東西：到「自動購買」分頁按「📋 建立購買範本」，照提示選位置，按 <kbd>F10</kbd>。</li>
-          <li>不想讓遊戲一直在前面：按「開啟背景遊戲視窗」，在裡面登入、用面板按開始，之後視窗可以縮小。</li>
+          <li>不想讓遊戲一直在前面：按「🧩 用原本的 Chrome（安裝擴充功能）」，照提示在擴充功能頁「載入未封裝項目」（只要一次），之後在平常的 Chrome 打開遊戲就會有面板，放背景也會繼續跑。</li>
         </ol>
         <a class="btn primary" href="https://github.com/cxu4425-beep/crrank-autoclicker/releases/latest/download/CRRank.exe">下載 CRRank.exe</a>
       </div>
@@ -242,11 +242,12 @@ footer{border-top:1px solid var(--line);padding:28px 0 40px;color:var(--muted);f
     <details class="faq"><summary>遊戲一定要放在前面嗎？</summary>
       <p>不用。照螢幕位置點的模式（電腦版連點、自動購買分頁）才需要看得到遊戲畫面。想在背景跑有兩種方式：</p>
       <ul>
-        <li><b>背景遊戲視窗</b>（推薦）：電腦版按「開啟背景遊戲視窗」，會開一個關掉背景節流的專用 Chrome／Edge 視窗，可以縮小或被蓋住，速度不受影響；期間電腦不會自動睡眠。Android 用「🌙 在背景執行遊戲」。</li>
-        <li><b>原本的分頁</b>：用書籤叫出面板後切去別的分頁也會繼續跑。自動購買照常速度，但 Chrome 會把收成和檢查的間隔拉長到大約 1 分鐘一次；建議在 Chrome 設定 → 效能 →「一律保持這些網站處於活躍狀態」加入 crrank.xpgs25.com。</li>
+        <li><b>擴充功能</b>（推薦）：電腦版按「🧩 用原本的 Chrome」，在擴充功能頁打開「開發人員模式」→「載入未封裝項目」選它準備好的資料夾，只要裝一次。用你原本已登入的 Chrome／Edge，不用重新登入；每 30 秒喚醒面板，背景分頁照常收成、購買、領取，Chrome 也不會把遊戲分頁卸載。</li>
+        <li><b>專用背景視窗</b>：電腦版「開啟專用背景視窗」，完全不受背景節流，但要在裡面另外登入一次；期間電腦不會自動睡眠。</li>
+        <li><b>Android</b>：內建遊戲按開始後，選「🌙 切到背景執行」。</li>
       </ul></details>
-    <details class="faq"><summary>為什麼背景模式要另外開一個視窗、另外登入？</summary>
-      <p>關掉背景節流只能在瀏覽器啟動時設定，而自動放回面板需要的除錯功能，新版 Chrome 不允許在你平常用的設定檔上開（為了保護登入資料），所以用一個獨立的設定檔。</p></details>
+    <details class="faq"><summary>擴充功能更新後要做什麼？</summary>
+      <p>更新電腦版程式後，它會自動把擴充功能的檔案換成新版；到 chrome://extensions（Edge：edge://extensions）按這個擴充功能的「重新載入」(↻)，再重新整理遊戲頁就好。</p></details>
     <details class="faq"><summary>手機上要注意什麼？</summary>
       <p>手機的瀏覽器在鎖定畫面或切到別的 App 時會暫停，請讓螢幕保持亮著、遊戲分頁留在前面（可以把亮度調低省電）。</p></details>
     <details class="faq"><summary>能量提醒要怎麼發到 Discord？</summary>
@@ -272,7 +273,19 @@ footer{border-top:1px solid var(--line);padding:28px 0 40px;color:var(--muted);f
     <div class="log">
 
       <div class="ver latest">
-        <h3>v1.5 <span class="date">2026-11-20</span> <span class="badge">最新</span></h3>
+        <h3>v1.6 <span class="date">2026-11-20</span> <span class="badge">最新</span></h3>
+        <p class="sum">背景模式改用你原本的 Chrome，不用重新登入。</p>
+        <ul>
+          <li>🧩 新增 Chrome／Edge 擴充功能：在原本已登入的瀏覽器自動放入面板，不用另外登入 Discord</li>
+          <li>⏰ 擴充功能每 30 秒喚醒面板，背景分頁的收成、購買、領取、能量提醒照常進行</li>
+          <li>🛡️ 防止 Chrome 卸載遊戲分頁；萬一被卸載會自動重新載入並接續</li>
+          <li>電腦版程式更新時自動把擴充功能檔案換成新版；原本的專用背景視窗保留為備用</li>
+        </ul>
+        <div class="rels"><a href="https://github.com/cxu4425-beep/crrank-autoclicker/releases/tag/v1.6">查看 v1.6 →</a><a class="src" href="https://github.com/cxu4425-beep/crrank-autoclicker/releases/download/v1.6/source-code.txt">📄 原始碼 txt</a><a class="src" href="https://github.com/cxu4425-beep/crrank-autoclicker/archive/refs/tags/v1.6.zip">📦 原始碼 zip</a></div>
+      </div>
+
+      <div class="ver">
+        <h3>v1.5 <span class="date">2026-11-20</span></h3>
         <p class="sum">聰明收成、自動領取、能量提醒、自動更新。</p>
         <ul>
           <li>🌾 聰明間隔：依每小時產量，在金幣或建材快滿（90%）前才收；電腦版／Android 有「📊 依產量算」幫你算間隔</li>

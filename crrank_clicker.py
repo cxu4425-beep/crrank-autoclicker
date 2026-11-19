@@ -16,7 +16,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from tkinter import filedialog, messagebox, ttk
 
 APP_NAME = "CR Rank 自動收成器"
-APP_VERSION = "1.5"
+APP_VERSION = "1.6"
 REPO = "cxu4425-beep/crrank-autoclicker"
 GAME_URL = "https://crrank.xpgs25.com/game"
 
@@ -274,7 +274,7 @@ for(var k=0;k<40;k++){var bs=claimBtns(dlgWithTab('成就'));if(!bs.length)break
 await waitFor(function(){return !document.contains(btn)||btn.textContent.trim()!='領取'||(!btn.disabled&&btn.closest('li,div').textContent!=before);},8000);}}
 if(opened){var dd=dlgWithTab('成就');var x=dd&&dd.querySelector('button[title^="關閉"],button[aria-label^="關閉"]');if(x)x.click();}
 X.log=new Date().toTimeString().slice(0,5)+' '+(got?'領取了 '+got+' 個獎勵':'沒有可以領的');}catch(e){X.log='錯誤：'+e.message;}finally{X.busy=false;xupd();}}
-function clSched(){clearTimeout(X.t);if(!c.cl)return;X.t=setTimeout(function(){claimAll().then(clSched);},Math.max(5,c.clm)*60000);}
+function clSched(){clearTimeout(X.t);if(!c.cl)return;var ms=Math.max(5,c.clm)*60000;X.at=Date.now()+ms;X.t=setTimeout(function(){claimAll().then(clSched);},ms);}
 function energy(){var el=document.querySelector('[title^="能量"]');if(!el)return null;var m=/([\d,]+)\s*\/\s*([\d,]+)/.exec(el.textContent);return m?{cur:num(m[1]),max:num(m[2])}:null;}
 function notify(tt,body){var ok=false;try{if(window.CRAndroid&&CRAndroid.notify){CRAndroid.notify(tt,body);ok=true;}else if('Notification' in window&&Notification.permission=='granted'){new Notification(tt,{body:body});ok=true;}}catch(e){}
 if(c.wh&&/^https:\/\/(canary\.|ptb\.)?(discord|discordapp)\.com\/api\/webhooks\//.test(c.wh)){var fd=new FormData();fd.append('content','**'+tt+'** '+body);fetch(c.wh,{method:'POST',mode:'no-cors',body:fd}).catch(function(){});ok=true;}
@@ -295,7 +295,13 @@ q('data-nt').onclick=function(){askPerm();setTimeout(function(){notify('測試�
 if(c.cl)setTimeout(function(){claimAll().then(clSched);},10000);
 if(c.run)setTimeout(start,1500);
 if(c.bon&&c.buy.length)setTimeout(function(){if(!B.on){B.on=true;B.log='自動接續';buyRun().then(bsched);}},4000);
-window.__crac={show:function(){p.style.display='';showMk();}};
+/* 喚醒：擴充功能每 30 秒叫一次，把被背景節流拖延的工作補做 */
+function wake(){var now=Date.now();p.setAttribute('data-last-tick',String(now));
+if(t&&t!==-1&&next&&now>=next+1000)arm(doClick());
+if(B.on&&!B.busy&&B.at&&now>=B.at+1000){clearTimeout(B.t);buyRun().then(bsched);}
+if(c.cl&&!X.busy&&X.at&&now>=X.at+1000){clearTimeout(X.t);claimAll().then(clSched);}
+checkEnergy();}
+window.__crac={show:function(){p.style.display='';showMk();},tick:wake};
 })();
 """
 
@@ -635,6 +641,68 @@ def smart_interval_minutes(gold_rate, mat_rate, gold_cap=2000, mat_cap=1500, rat
     return max(1, int(min(hours) * 60)) if hours else None
 
 
+EXT_BACKGROUND_JS = r"""
+// 每 30 秒喚醒知識領土分頁上的面板，並防止 Chrome 把分頁卸載（不需要重新登入，用你原本的 Chrome）
+const GAME = 'https://crrank.xpgs25.com/*';
+function ensureAlarm() {
+  chrome.alarms.get('crac-tick', a => { if (!a) chrome.alarms.create('crac-tick', { periodInMinutes: 0.5 }); });
+}
+chrome.runtime.onInstalled.addListener(ensureAlarm);
+chrome.runtime.onStartup.addListener(ensureAlarm);
+ensureAlarm();
+chrome.alarms.onAlarm.addListener(async a => {
+  if (a.name !== 'crac-tick') return;
+  const tabs = await chrome.tabs.query({ url: GAME });
+  for (const t of tabs) {
+    if (t.discarded) { chrome.tabs.reload(t.id).catch(() => {}); continue; }   // 被卸載了就重新載入（面板會自動接續）
+    if (t.autoDiscardable) chrome.tabs.update(t.id, { autoDiscardable: false }).catch(() => {});
+    chrome.tabs.sendMessage(t.id, { type: 'crac-tick' }).catch(() => {});
+  }
+});
+"""
+
+EXT_README = """CR Rank 自動收成 — Chrome／Edge 擴充功能
+
+用你原本的 Chrome（已經登入的那個），不用重新登入 Discord。
+安裝一次就好：
+1. Chrome 網址列輸入 chrome://extensions （Edge：edge://extensions）
+2. 打開右上角（Edge 在左下）的「開發人員模式」
+3. 按「載入未封裝項目」，選這個資料夾
+4. 打開或重新整理知識領土，面板會自動出現
+
+之後就算遊戲分頁在背景、被其他視窗蓋住，面板也會繼續收成、購買、領取；
+擴充功能每 30 秒會喚醒面板一次，並防止 Chrome 把遊戲分頁卸載。
+更新電腦版程式後，到 chrome://extensions 按這個擴充功能的「重新載入」(↻) 就會換成新版面板。
+"""
+
+
+def extension_dir():
+    return os.path.join(os.environ.get("LOCALAPPDATA", app_dir()), "CRRankAutoHarvest", "chrome-extension")
+
+
+def write_extension(path=None):
+    """產生 Chrome／Edge 擴充功能（MV3）：自動放入面板＋定時喚醒＋防止分頁卸載。"""
+    path = path or extension_dir()
+    os.makedirs(path, exist_ok=True)
+    manifest = {
+        "manifest_version": 3,
+        "name": "CR Rank 自動收成",
+        "version": APP_VERSION,
+        "description": "在知識領土頁面自動放入自動收成面板，背景分頁也會繼續運作（非官方玩家工具）。",
+        "permissions": ["alarms"],
+        "host_permissions": ["https://crrank.xpgs25.com/*"],
+        "background": {"service_worker": "background.js"},
+        "content_scripts": [{"matches": ["https://crrank.xpgs25.com/*"], "js": ["panel.js"], "run_at": "document_idle"}],
+    }
+    panel = MOBILE_JS.strip() + "\nchrome.runtime.onMessage.addListener(function(m){if(m&&m.type==='crac-tick'&&window.__crac&&window.__crac.tick)window.__crac.tick();});\n"
+    files = {"manifest.json": json.dumps(manifest, ensure_ascii=False, indent=2), "background.js": EXT_BACKGROUND_JS.strip() + "\n",
+             "panel.js": panel, "安裝說明.txt": EXT_README}
+    for name, text in files.items():
+        with open(os.path.join(path, name), "w", encoding="utf-8", newline="\n") as fh:
+            fh.write(text)
+    return path
+
+
 class BgBrowser:
     """背景模式：開一個專用的 Chrome／Edge 視窗（關掉背景節流），自動把面板放進遊戲頁。
     視窗可以縮小或被蓋住，面板照樣運作；用模擬點擊（點網頁上的按鈕），不需要遊戲畫面在前台。"""
@@ -869,6 +937,11 @@ class App:
         self._keys = {VK_F8: False, VK_F9: False, VK_F10: False}
         if self.s.get("auto_update", True):
             self.root.after(3000, self.check_update)
+        if os.path.isdir(extension_dir()):  # 已經裝過擴充功能 → 把檔案更新成這一版的面板
+            try:
+                write_extension()
+            except Exception:
+                pass
 
     # ----- ① 依產量算收成間隔 -----
     def calc_interval(self):
@@ -980,6 +1053,34 @@ class App:
         subprocess.Popen([tmp, "--finish-update", sys.executable, str(os.getpid())])
         self.root.after(0, lambda: self.quit(silent=True))
 
+    # ----- 🧩 Chrome 擴充功能（用原本的 Chrome，不用重新登入） -----
+    def install_extension(self):
+        import subprocess
+        path = write_extension()
+        try:
+            os.startfile(path)
+        except Exception:
+            pass
+        exe = BgBrowser.find_browser()
+        page = "edge://extensions" if exe and exe.lower().endswith("msedge.exe") else "chrome://extensions"
+        if exe:
+            try:
+                subprocess.Popen([exe, page])  # 在你原本的瀏覽器（同一個設定檔）打開擴充功能頁
+            except Exception:
+                pass
+        try:
+            self.root.clipboard_clear()
+            self.root.clipboard_append(path)
+        except Exception:
+            pass
+        messagebox.showinfo(APP_NAME, (
+            "擴充功能檔案已經準備好（資料夾路徑也複製到剪貼簿了）：\n" + path + "\n\n"
+            f"在剛打開的 {page} 頁面：\n"
+            "1. 打開「開發人員模式」\n"
+            "2. 按「載入未封裝項目」，選上面這個資料夾（可以直接貼上路徑）\n"
+            "3. 打開或重新整理知識領土，面板就會自動出現\n\n"
+            "只要裝一次。以後更新程式，到擴充功能頁按它的「重新載入」(↻) 就會換成新版面板。"))
+
     def toggle_bg(self):
         if self.bg.running():
             self.bg.stop()
@@ -1053,16 +1154,22 @@ class App:
         r += 1
         ttk.Label(pc, text="🌙 背景模式（遊戲不用放在前台）", font=("Microsoft JhengHei UI", 10, "bold")).grid(row=r, column=0, columnspan=4, sticky="w")
         r += 1
-        self.bgbtn = ttk.Button(pc, text="開啟背景遊戲視窗", command=self.toggle_bg)
-        self.bgbtn.grid(row=r, column=0, columnspan=4, sticky="we")
+        ttk.Button(pc, text="🧩 用原本的 Chrome（安裝擴充功能，不用重新登入）", command=self.install_extension).grid(
+            row=r, column=0, columnspan=4, sticky="we")
+        r += 1
+        ttk.Label(pc, foreground="#666", wraplength=380, justify="left", text=(
+            "推薦。裝一次擴充功能後，在你平常的 Chrome 打開知識領土就會自動出現面板；分頁放背景、被蓋住都會繼續跑，"
+            "Chrome 也不會把遊戲分頁卸載。")).grid(row=r, column=0, columnspan=4, sticky="w")
+        r += 1
+        self.bgbtn = ttk.Button(pc, text="開啟專用背景視窗（要另外登入）", command=self.toggle_bg)
+        self.bgbtn.grid(row=r, column=0, columnspan=4, sticky="we", pady=(6, 0))
         r += 1
         self.bglbl = ttk.Label(pc, text="未開啟", foreground="#2a6db0", wraplength=380)
         self.bglbl.grid(row=r, column=0, columnspan=4, sticky="w")
         r += 1
         ttk.Label(pc, foreground="#666", wraplength=380, justify="left", text=(
-            "會開一個專用的 Chrome／Edge 視窗，第一次要在裡面用 Discord 登入。遊戲頁會自動出現面板，"
-            "在面板設定收成和「🛒 自動購買」後按開始，之後視窗可以縮小或被其他視窗蓋住，照樣會繼續點。"
-            "背景模式期間電腦不會自動睡眠。")).grid(row=r, column=0, columnspan=4, sticky="w")
+            "另一種方式：開一個專用的 Chrome／Edge 視窗（完全不受背景節流），第一次要在裡面用 Discord 登入；"
+            "期間電腦不會自動睡眠。")).grid(row=r, column=0, columnspan=4, sticky="w")
         r += 1
         ttk.Separator(pc).grid(row=r, column=0, columnspan=4, sticky="we", pady=6)
         r += 1
@@ -1546,7 +1653,7 @@ class App:
         self.status.config(text=(f"執行中 · 下次 {st['next_in']} 秒" if st["running"] else "已停止") + f" · 已點 {st['count']} 次")
         self.bstatus.config(text=self.buyer.status())
         self.bglbl.config(text=self.bg.state if self.bg.running() or self.bg.state != "啟動中…" else "未開啟")
-        self.bgbtn.config(text="關閉背景遊戲視窗" if self.bg.running() else "開啟背景遊戲視窗")
+        self.bgbtn.config(text="關閉專用背景視窗" if self.bg.running() else "開啟專用背景視窗（要另外登入）")
         on_buy_tab = self.nb.select() == str(self.buy_tab)
         for vk in (VK_F8, VK_F9, VK_F10):
             down = bool(user32.GetAsyncKeyState(vk) & 0x8000)

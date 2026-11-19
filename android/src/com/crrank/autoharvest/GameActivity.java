@@ -30,6 +30,7 @@ public class GameActivity extends Activity {
         CookieManager.getInstance().setAcceptCookie(true);
         CookieManager.getInstance().setAcceptThirdPartyCookies(w, true);
         final String js = Res.js(this);
+        w.addJavascriptInterface(new NotifyBridge(this), "CRAndroid");
         w.setWebChromeClient(new WebChromeClient());
         w.setWebViewClient(new WebViewClient() {
             @Override

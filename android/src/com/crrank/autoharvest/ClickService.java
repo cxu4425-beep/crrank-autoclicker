@@ -125,6 +125,7 @@ public class ClickService extends AccessibilityService {
         android.webkit.CookieManager.getInstance().setAcceptCookie(true);
         android.webkit.CookieManager.getInstance().setAcceptThirdPartyCookies(bgWeb, true);
         final String js = Res.js(this);
+        bgWeb.addJavascriptInterface(new NotifyBridge(this), "CRAndroid");
         bgWeb.setWebViewClient(new android.webkit.WebViewClient() {
             @Override
             public void onPageFinished(android.webkit.WebView v, String url) {

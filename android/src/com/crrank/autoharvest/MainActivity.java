@@ -151,6 +151,117 @@ public class MainActivity extends Activity {
         setContentView(root);
         int tab = e.prefs().getInt("tab", 0);
         showTab(tab >= 0 && tab < tabs.length ? tab : 0);
+        if (android.os.Build.VERSION.SDK_INT >= 33
+                && checkSelfPermission("android.permission.POST_NOTIFICATIONS") != android.content.pm.PackageManager.PERMISSION_GRANTED)
+            requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"}, 7);
+        if (e.prefs().getBoolean("auto_update", true)) checkUpdate(false);
+    }
+
+    // ---------- ⑤ 自動更新：檢查 GitHub 最新版本 ----------
+    private static final String REPO = "cxu4425-beep/crrank-autoclicker";
+
+    private String appVersion() {
+        try {
+            return getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+        } catch (Exception ex) {
+            return "0";
+        }
+    }
+
+    private static int[] ver(String v) {
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("\\d+").matcher(v == null ? "" : v);
+        int[] r = new int[3];
+        for (int i = 0; i < 3 && m.find(); i++) r[i] = Integer.parseInt(m.group());
+        return r;
+    }
+
+    private static boolean newer(String a, String b) {
+        int[] x = ver(a), y = ver(b);
+        for (int i = 0; i < 3; i++) if (x[i] != y[i]) return x[i] > y[i];
+        return false;
+    }
+
+    private void checkUpdate(final boolean manual) {
+        new Thread(() -> {
+            try {
+                java.net.HttpURLConnection con = (java.net.HttpURLConnection)
+                        new java.net.URL("https://api.github.com/repos/" + REPO + "/releases/latest").openConnection();
+                con.setRequestProperty("User-Agent", "CRRank-AutoHarvest");
+                con.setRequestProperty("Accept", "application/vnd.github+json");
+                con.setConnectTimeout(10000);
+                con.setReadTimeout(10000);
+                java.io.InputStream in = con.getInputStream();
+                java.io.ByteArrayOutputStream bo = new java.io.ByteArrayOutputStream();
+                byte[] buf = new byte[8192];
+                int n;
+                while ((n = in.read(buf)) > 0) bo.write(buf, 0, n);
+                in.close();
+                org.json.JSONObject o = new org.json.JSONObject(new String(bo.toByteArray(), "UTF-8"));
+                final String tag = o.optString("tag_name");
+                final String body = o.optString("body");
+                String apk = o.optString("html_url");
+                org.json.JSONArray as = o.optJSONArray("assets");
+                if (as != null) for (int i = 0; i < as.length(); i++)
+                    if ("CRRank-AutoHarvest.apk".equals(as.getJSONObject(i).optString("name")))
+                        apk = as.getJSONObject(i).optString("browser_download_url");
+                final String url = apk;
+                final String cur = appVersion();
+                runOnUiThread(() -> {
+                    if (isFinishing()) return;
+                    if (!newer(tag, cur)) {
+                        if (manual) Toast.makeText(this, "已經是最新版（v" + cur + "）", Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                    if (!manual && tag.equals(e.prefs().getString("skip_ver", ""))) return;
+                    String notes = body.length() > 600 ? body.substring(0, 600) + "…" : body;
+                    new AlertDialog.Builder(this).setTitle("有新版本 " + tag + "（目前 v" + cur + "）")
+                            .setMessage(notes + "\n\n按「下載」後安裝新的 APK，會直接覆蓋舊版、設定會保留。")
+                            .setPositiveButton("下載", (d, w) -> startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url))))
+                            .setNeutralButton("略過這版", (d, w) -> e.prefs().edit().putString("skip_ver", tag).apply())
+                            .setNegativeButton("以後再說", null).show();
+                });
+            } catch (Exception ex) {
+                if (manual) runOnUiThread(() -> Toast.makeText(this, "檢查更新失敗：" + ex.getMessage(), Toast.LENGTH_LONG).show());
+            }
+        }).start();
+    }
+
+    // ---------- ① 依產量算收成間隔 ----------
+    private void calcInterval() {
+        LinearLayout l = page();
+        l.addView(hint("在遊戲裡點一下上方的金幣、建材，會看到「每小時產出 ___」。沒收成的產出最多累積金幣 2000、建材 1500，滿了就停產；這裡會算出快滿（90%）之前收一次的間隔。"));
+        EditText g = num(true);
+        EditText m = num(true);
+        g.setText(e.prefs().getString("rate_gold", ""));
+        m.setText(e.prefs().getString("rate_mat", ""));
+        l.addView(row(label("金幣 每小時產出  ", 14, false), g));
+        l.addView(row(label("建材 每小時產出  ", 14, false), m));
+        new AlertDialog.Builder(this).setTitle("依產量算收成間隔").setView(l)
+                .setPositiveButton("套用到間隔", (d, w) -> {
+                    double gr = 0, mr = 0;
+                    try {
+                        gr = Double.parseDouble(g.getText().toString().trim());
+                    } catch (Exception ignored) {
+                    }
+                    try {
+                        mr = Double.parseDouble(m.getText().toString().trim());
+                    } catch (Exception ignored) {
+                    }
+                    double hours = Double.MAX_VALUE;
+                    if (gr > 0) hours = Math.min(hours, 2000 * 0.9 / gr);
+                    if (mr > 0) hours = Math.min(hours, 1500 * 0.9 / mr);
+                    if (hours == Double.MAX_VALUE) {
+                        Toast.makeText(this, "至少要填一個大於 0 的產量", Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                    int mins = Math.max(1, (int) (hours * 60));
+                    e.prefs().edit().putString("rate_gold", g.getText().toString().trim())
+                            .putString("rate_mat", m.getText().toString().trim()).apply();
+                    eiv.setText(String.valueOf(mins));
+                    sun.setSelection(1); // 分
+                    collect(true);
+                    Toast.makeText(this, "已設定每 " + mins + " 分鐘收一次", Toast.LENGTH_LONG).show();
+                }).setNegativeButton("取消", null).show();
     }
 
     // ---------- 分頁 2：自動購買（對應電腦版「自動購買」） ----------
@@ -500,6 +611,7 @@ public class MainActivity extends Activity {
         ArrayAdapter<String> ad = new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, Engine.UNITS);
         sun.setAdapter(ad);
         p.addView(row(label("間隔  ", 15, false), eiv, sun));
+        p.addView(btn("📊 依產量算間隔（快滿前才收）", v -> calcInterval()));
         ejit = num(true);
         p.addView(row(label("隨機誤差 ± 秒  ", 15, false), ejit));
         elim = num(false);
@@ -530,6 +642,13 @@ public class MainActivity extends Activity {
         p.addView(status);
         p.addView(btn("開啟知識領土網站", v -> startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(Engine.GAME_URL)))));
         p.addView(hint("提示：按開始後 App 會退到背景，遊戲畫面要停在那個位置、不要被擋住，螢幕要保持亮著。"));
+        p.addView(sep());
+        CheckBox au = new CheckBox(this);
+        au.setText("開啟時自動檢查更新");
+        au.setChecked(e.prefs().getBoolean("auto_update", true));
+        au.setOnCheckedChangeListener((v, on) -> e.prefs().edit().putBoolean("auto_update", on).apply());
+        p.addView(row(label("版本 v" + appVersion() + "  ", 14, false), btn("檢查更新", v -> checkUpdate(true))));
+        p.addView(au);
         return p;
     }
 

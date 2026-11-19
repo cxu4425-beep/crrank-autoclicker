@@ -16,6 +16,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from tkinter import filedialog, messagebox, ttk
 
 APP_NAME = "CR Rank 自動收成器"
+APP_VERSION = "1.5"
+REPO = "cxu4425-beep/crrank-autoclicker"
 GAME_URL = "https://crrank.xpgs25.com/game"
 
 # ---------- DPI：讓座標和實際螢幕像素一致 ----------
@@ -146,8 +148,9 @@ function save(){try{localStorage.setItem(K,JSON.stringify(c));}catch(e){}}
 var t=null,tick=null,n=0,next=0,last='';
 var p=document.createElement('div');
 p.style.cssText='position:fixed;z-index:2147483647;background:#1e2230;color:#fff;font:14px sans-serif;padding:10px;border-radius:12px;box-shadow:0 4px 18px rgba(0,0,0,.45);width:220px;max-height:85vh;overflow:auto;touch-action:none;line-height:1.7';
-p.innerHTML='<div data-h style="font-weight:bold;cursor:move;user-select:none">&#9776; 自動收成<span data-x style="float:right;cursor:pointer;padding:0 4px">&#10005;</span></div>'+
+p.innerHTML='<div data-h style="font-weight:bold;cursor:move;user-select:none">&#9776; 自動收成 <span style="font-weight:normal;font-size:11px;opacity:.6">v__VER__</span><span data-x style="float:right;cursor:pointer;padding:0 4px">&#10005;</span></div>'+
 '<label>間隔(秒) <input data-iv type="number" min="1" style="width:80px;font-size:14px"></label><br>'+
+'<label title="從資源列讀每小時產量，在金幣或建材快滿（90%）之前才收"><input type="checkbox" data-sm> 聰明間隔（快滿前才收）</label><br>'+
 '<label><input type="radio" name="cracm" value="auto"> 自動找「收成」按鈕</label><br>'+
 '<label><input type="radio" name="cracm" value="pos"> 點自訂位置</label> <button data-pk style="font-size:13px">選位置</button><br>'+
 '<button data-go style="width:100%;margin-top:4px;padding:7px;font-size:15px;font-weight:bold;border:0;border-radius:8px;background:#ffc93c;color:#222">開始</button>'+
@@ -158,7 +161,14 @@ p.innerHTML='<div data-h style="font-weight:bold;cursor:move;user-select:none">&
 '<label><input type="radio" name="cracb" value="restock"> 每次補貨後買</label><br>'+
 '<label><input type="radio" name="cracb" value="min"> 每 <input data-bm type="number" min="1" style="width:52px;font-size:14px"> 分鐘檢查</label><br>'+
 '<button data-bg style="width:100%;margin-top:4px;padding:6px;font-size:14px;font-weight:bold;border:0;border-radius:8px;background:#8fd3ff;color:#222">開始自動購買</button>'+
-'<div data-bs style="font-size:12px;opacity:.85;margin-top:4px">勾選要買的商品後按開始</div></div></div>';
+'<div data-bs style="font-size:12px;opacity:.85;margin-top:4px">勾選要買的商品後按開始</div></div></div>'+
+'<div style="border-top:1px solid #3a4052;margin-top:6px;padding-top:4px"><div data-xt style="font-weight:bold;cursor:pointer;user-select:none">&#9881;&#65039; 領取與提醒 <span data-xa>&#9662;</span></div>'+
+'<div data-xb style="display:none;font-size:13px">'+
+'<label><input type="checkbox" data-cl> 自動領取任務／成就／補給</label><br>每 <input data-clm type="number" min="5" style="width:52px;font-size:14px"> 分鐘 <button data-cl1 style="font-size:13px">立即領取</button><br>'+
+'<label><input type="checkbox" data-en> 能量快滿時提醒</label> 達 <input data-enp type="number" min="10" max="100" style="width:46px;font-size:14px">%<br>'+
+'Discord Webhook（選填）<input data-wh placeholder="https://discord.com/api/webhooks/…" style="width:100%;font-size:12px;box-sizing:border-box">'+
+'<button data-nt style="font-size:13px;margin-top:4px">測試通知</button>'+
+'<div data-xs style="font-size:12px;opacity:.85;margin-top:4px"></div></div></div>';
 document.body.appendChild(p);
 var mk=document.createElement('div');
 mk.style.cssText='position:fixed;z-index:2147483646;width:22px;height:22px;margin:-11px 0 0 -11px;border:3px solid #ff3b5c;border-radius:50%;pointer-events:none;display:none';
@@ -177,12 +187,21 @@ try{el.dispatchEvent(new PointerEvent('pointerdown',o));}catch(e){}el.dispatchEv
 try{el.dispatchEvent(new PointerEvent('pointerup',o));}catch(e){}el.dispatchEvent(new MouseEvent('mouseup',o));
 if(el.click)el.click();else el.dispatchEvent(new MouseEvent('click',o));}
 function doClick(){
-if(c.mode=='auto'){var b=findBtn();if(b){var tx=b.textContent.trim();b.click();n++;last='已收成 '+tx;}else{last='目前沒有可收成';}}
-else{var x=c.x*innerWidth/100,y=c.y*innerHeight/100;p.style.visibility='hidden';var el=document.elementFromPoint(x,y);p.style.visibility='';if(el){fire(el,x,y);n++;last='已點位置';}else last='位置沒有元素';}
-next=Date.now()+c.iv*1000;upd();}
-function upd(){q('data-s').textContent=(t?'執行中 · 下次 '+Math.max(0,Math.ceil((next-Date.now())/1000))+' 秒':'已停止')+' · 共 '+n+' 次'+(last?' · '+last:'');}
-function start(){if(t)return;c.run=true;save();doClick();t=setInterval(doClick,c.iv*1000);tick=setInterval(upd,1000);var g=q('data-go');g.textContent='停止';g.style.background='#ff6b6b';upd();}
-function stop(){c.run=false;save();clearInterval(t);clearInterval(tick);t=null;var g=q('data-go');g.textContent='開始';g.style.background='#ffc93c';upd();}
+if(c.mode=='auto'){var b=findBtn();if(b){var tx=b.textContent.trim();b.click();n++;last='已收成 '+tx;return true;}else{last='目前沒有可收成';}}
+else{var x=c.x*innerWidth/100,y=c.y*innerHeight/100;p.style.visibility='hidden';var el=document.elementFromPoint(x,y);p.style.visibility='';if(el){fire(el,x,y);n++;last='已點位置';return true;}else last='位置沒有元素';}
+return false;}
+function num(s){s=String(s).replace(/,/g,'').trim();var k=1;if(/[kK]$/.test(s)){k=1e3;s=s.slice(0,-1);}else if(/[mM]$/.test(s)){k=1e6;s=s.slice(0,-1);}else if(/萬$/.test(s)){k=1e4;s=s.slice(0,-1);}return (parseFloat(s)||0)*k;}
+function resInfo(kw){var el=document.querySelector('[title^="'+kw+'・每小時產出"]');if(!el)return null;var a=/每小時產出\s*([\d,.]+[kKmM萬]?)/.exec(el.title),b=/累積到\s*([\d,.]+[kKmM萬]?)/.exec(el.title);return a&&b?{rate:num(a[1]),cap:num(b[1])}:null;}
+function pendingNow(){var b=findBtn();if(!b)return [0,0];var m=/\+\s*([\d,.]+[kKmM萬]?)\s*\/\s*([\d,.]+[kKmM萬]?)/.exec(b.textContent);return m?[num(m[1]),num(m[2])]:[0,0];}
+var smartWho='';
+function smartDelay(empty){var pd=empty?[0,0]:pendingNow(),best=null;[['金幣',0],['建材',1]].forEach(function(a){var r=resInfo(a[0]);if(!r||r.rate<=0||r.cap<=0)return;var h=(r.cap*0.9-pd[a[1]])/r.rate;if(best===null||h<best){best=h;smartWho=a[0];}});
+if(best===null)return null;return Math.min(3*3600e3,Math.max(60e3,best*3600e3));}
+function nextDelay(harvested){if(c.smart&&c.mode=='auto'){var d=smartDelay(harvested);if(d!==null)return d;}return c.iv*1000;}
+function arm(harvested){clearTimeout(t);var d=nextDelay(harvested);next=Date.now()+d;t=setTimeout(function(){arm(doClick());},d);upd();}
+function upd(){var s=Math.max(0,Math.ceil((next-Date.now())/1000)),mm=Math.floor(s/60)+':'+('0'+s%60).slice(-2);
+q('data-s').textContent=(t?'執行中 · 下次 '+(s>=60?mm:s+' 秒')+(c.smart&&c.mode=='auto'&&smartWho?'（聰明間隔，'+smartWho+'先滿）':''):'已停止')+' · 共 '+n+' 次'+(last?' · '+last:'');}
+function start(){if(t)return;c.run=true;save();var g=q('data-go');g.textContent='停止';g.style.background='#ff6b6b';t=-1;arm(doClick());tick=setInterval(upd,1000);upd();}
+function stop(){c.run=false;save();clearTimeout(t);clearInterval(tick);t=null;var g=q('data-go');g.textContent='開始';g.style.background='#ffc93c';upd();}
 q('data-go').onclick=function(){t?stop():start();};
 q('data-x').onclick=function(){stop();p.style.display='none';mk.style.display='none';};
 q('data-pk').onclick=function(){var ov=document.createElement('div');
@@ -216,7 +235,7 @@ for(var i=0;i<n;i++){d=shopDlg();if(!d)return;tl=d.querySelector('[role=tablist]
 await waitFor(function(){var dd=shopDlg();var ll=dd&&(dd.querySelector('[role=tablist][aria-label="商店分類"]')||dd.querySelectorAll('[role=tablist]')[1]);var t2=ll&&ll.querySelectorAll('[role=tab]')[i];return !t2||tabSel(t2)||(was&&t2);},5000);
 await waitFor(shopReady,6000);await fn();}}
 function restockAt(){var d=shopDlg();var m=d&&/下次補貨\s*(\d+(?::\d+)+)/.exec(d.textContent);if(!m)return 0;var s=0,a=m[1].split(':');for(var i=0;i<a.length;i++)s=s*60+(+a[i]);return Date.now()+s*1000+5000;}
-async function buyRun(){if(B.busy)return;B.busy=true;bupd();var got=[];try{var o=await openShop();if(!o){B.log='打不開商店（先關掉其他視窗）';return;}
+async function buyRun(){if(B.busy||(typeof X!='undefined'&&X.busy))return;B.busy=true;bupd();var got=[];try{var o=await openShop();if(!o){B.log='打不開商店（先關掉其他視窗）';return;}
 await eachCat(async function(){var cs=cards();for(var i=0;i<cs.length;i++){var nm=cs[i].name;if(c.buy.indexOf(nm)<0)continue;var k=0,cap=Math.max(1,cs[i].stock);
 while(k<cap){var cd=findCard(nm);if(!cd||cd.btn.disabled)break;var before=stockText(nm);cd.btn.click();k++;
 await waitFor(function(){var s=stockText(nm);return s!=before&&!/\|true$/.test(s)||s=='gone'||(s!=before&&!/庫存/.test(s));},10000);}if(k)got.push(nm+' ×'+k);}});
@@ -240,11 +259,48 @@ function bstop(){B.on=false;c.bon=false;save();clearTimeout(B.t);bupd();}
 q('data-bg').onclick=function(){if(B.on){bstop();return;}if(!c.buy.length){B.log='先勾選要買的商品';bupd();return;}B.on=true;c.bon=true;save();buyRun().then(bsched);};
 setInterval(function(){if(B.on||B.busy)bupd();},1000);renderList();bupd();
 var oldX=q('data-x').onclick;q('data-x').onclick=function(){bstop();oldX();};
+var sm=q('data-sm');sm.checked=!!c.smart;sm.onchange=function(){c.smart=sm.checked;save();if(t)arm(false);};
+if(!c.clm)c.clm=30;if(!c.enp)c.enp=95;
+var X={busy:false,t:null,log:'',enSent:false};
+function xupd(){q('data-xs').textContent=X.busy?'領取中…':X.log;}
+function dlgWithTab(name){var ds=document.querySelectorAll('[role=dialog]');for(var i=0;i<ds.length;i++){var ts=ds[i].querySelectorAll('[role=tab]');for(var j=0;j<ts.length;j++)if(ts[j].textContent.trim().indexOf(name)==0)return ds[i];}return null;}
+function claimBtns(d){var out=[];if(!d)return out;var bs=d.querySelectorAll('button');for(var i=0;i<bs.length;i++){if(!bs[i].disabled&&bs[i].textContent.trim()=='領取'&&!p.contains(bs[i]))out.push(bs[i]);}return out;}
+async function claimAll(){if(X.busy||B.busy)return;X.busy=true;xupd();var got=0;try{var opened=false;
+if(!dlgWithTab('成就')){var b=byText('button','任務');if(!b){X.log='找不到「任務」按鈕';return;}b.click();opened=true;await waitFor(function(){return dlgWithTab('成就');},6000);}
+var d=dlgWithTab('成就');if(!d){X.log='打不開任務視窗（先關掉其他視窗）';return;}
+var tabs=['任務','成就'];for(var ti=0;ti<tabs.length;ti++){d=dlgWithTab('成就');if(!d)break;var tb=byText('[role=tab]',tabs[ti],d);if(tb&&!tabSel(tb)){tb.click();await waitFor(function(){var x=byText('[role=tab]',tabs[ti],dlgWithTab('成就'));return tabSel(x);},4000);}
+await waitFor(function(){var dd=dlgWithTab('成就');return dd&&/領取|已完成|未完成|\d+\s*\/\s*\d+/.test(dd.textContent);},4000);
+for(var k=0;k<40;k++){var bs=claimBtns(dlgWithTab('成就'));if(!bs.length)break;var btn=bs[0],before=btn.closest('li,div').textContent;btn.click();got++;
+await waitFor(function(){return !document.contains(btn)||btn.textContent.trim()!='領取'||(!btn.disabled&&btn.closest('li,div').textContent!=before);},8000);}}
+if(opened){var dd=dlgWithTab('成就');var x=dd&&dd.querySelector('button[title^="關閉"],button[aria-label^="關閉"]');if(x)x.click();}
+X.log=new Date().toTimeString().slice(0,5)+' '+(got?'領取了 '+got+' 個獎勵':'沒有可以領的');}catch(e){X.log='錯誤：'+e.message;}finally{X.busy=false;xupd();}}
+function clSched(){clearTimeout(X.t);if(!c.cl)return;X.t=setTimeout(function(){claimAll().then(clSched);},Math.max(5,c.clm)*60000);}
+function energy(){var el=document.querySelector('[title^="能量"]');if(!el)return null;var m=/([\d,]+)\s*\/\s*([\d,]+)/.exec(el.textContent);return m?{cur:num(m[1]),max:num(m[2])}:null;}
+function notify(tt,body){var ok=false;try{if(window.CRAndroid&&CRAndroid.notify){CRAndroid.notify(tt,body);ok=true;}else if('Notification' in window&&Notification.permission=='granted'){new Notification(tt,{body:body});ok=true;}}catch(e){}
+if(c.wh&&/^https:\/\/(canary\.|ptb\.)?(discord|discordapp)\.com\/api\/webhooks\//.test(c.wh)){var fd=new FormData();fd.append('content','**'+tt+'** '+body);fetch(c.wh,{method:'POST',mode:'no-cors',body:fd}).catch(function(){});ok=true;}
+X.log=new Date().toTimeString().slice(0,5)+(ok?' 已通知：'+tt:' 沒有可用的通知方式（允許瀏覽器通知或填 Webhook）');xupd();return ok;}
+function askPerm(){try{if(!window.CRAndroid&&'Notification' in window&&Notification.permission=='default')Notification.requestPermission();}catch(e){}}
+function checkEnergy(){if(!c.en)return;var e=energy();if(!e||!e.max)return;var pct=e.cur/e.max*100;if(pct>=c.enp){if(!X.enSent){X.enSent=true;notify('知識領土：能量快滿了','目前 '+e.cur+'/'+e.max+'，回來答題吧！');}}else if(pct<c.enp-5)X.enSent=false;}
+setInterval(checkEnergy,30000);
+q('data-xt').onclick=function(){var bb=q('data-xb'),o=bb.style.display=='none';bb.style.display=o?'':'none';q('data-xa').innerHTML=o?'&#9652;':'&#9662;';};
+var cl=q('data-cl'),clm=q('data-clm'),en=q('data-en'),enp=q('data-enp'),wh=q('data-wh');
+cl.checked=!!c.cl;clm.value=c.clm;en.checked=!!c.en;enp.value=c.enp;wh.value=c.wh||'';
+cl.onchange=function(){c.cl=cl.checked;save();if(c.cl){claimAll().then(clSched);}else clearTimeout(X.t);};
+clm.onchange=function(){c.clm=Math.max(5,parseFloat(clm.value)||30);clm.value=c.clm;save();clSched();};
+en.onchange=function(){c.en=en.checked;save();X.enSent=false;if(c.en){askPerm();checkEnergy();}};
+enp.onchange=function(){c.enp=Math.min(100,Math.max(10,parseFloat(enp.value)||95));enp.value=c.enp;save();X.enSent=false;};
+wh.onchange=function(){c.wh=wh.value.trim();save();};
+q('data-cl1').onclick=function(){claimAll();};
+q('data-nt').onclick=function(){askPerm();setTimeout(function(){notify('測試通知','CR Rank 自動收成器的通知可以用了 ✅');},300);};
+if(c.cl)setTimeout(function(){claimAll().then(clSched);},10000);
 if(c.run)setTimeout(start,1500);
 if(c.bon&&c.buy.length)setTimeout(function(){if(!B.on){B.on=true;B.log='自動接續';buyRun().then(bsched);}},4000);
 window.__crac={show:function(){p.style.display='';showMk();}};
 })();
 """
+
+
+MOBILE_JS = MOBILE_JS.replace("__VER__", APP_VERSION)
 
 
 def minify_js(js):
@@ -526,6 +582,59 @@ class BuyRunner:
                + f" · 已買 {self.runs} 輪"
 
 
+def ver_tuple(v):
+    import re
+    return tuple(int(x) for x in re.findall(r"\d+", str(v))[:3])
+
+
+def fetch_latest_release():
+    import urllib.request
+    req = urllib.request.Request(f"https://api.github.com/repos/{REPO}/releases/latest",
+                                 headers={"User-Agent": "CRRank-AutoHarvest", "Accept": "application/vnd.github+json"})
+    with urllib.request.urlopen(req, timeout=10) as r:
+        return json.loads(r.read().decode("utf-8"))
+
+
+def finish_update_if_requested():
+    """自我更新的後半段：新版 exe 從暫存資料夾啟動，等舊程式關掉後把自己複製過去再重新開啟。"""
+    import shutil
+    import subprocess
+    argv = sys.argv
+    if "--finish-update" in argv:
+        i = argv.index("--finish-update")
+        target, pid = argv[i + 1], int(argv[i + 2])
+        h = ctypes.windll.kernel32.OpenProcess(0x00100000, False, pid)  # SYNCHRONIZE
+        if h:
+            ctypes.windll.kernel32.WaitForSingleObject(h, 30000)
+            ctypes.windll.kernel32.CloseHandle(h)
+        for _ in range(20):
+            try:
+                shutil.copy2(sys.executable, target)
+                break
+            except OSError:
+                time.sleep(0.5)
+        subprocess.Popen([target, "--cleanup", sys.executable])
+        sys.exit(0)
+    if "--cleanup" in argv:
+        path = argv[argv.index("--cleanup") + 1]
+
+        def rm():
+            for _ in range(15):
+                time.sleep(1)
+                try:
+                    os.remove(path)
+                    return
+                except OSError:
+                    pass
+        threading.Thread(target=rm, daemon=True).start()
+
+
+def smart_interval_minutes(gold_rate, mat_rate, gold_cap=2000, mat_cap=1500, ratio=0.9):
+    """依每小時產量算出「快滿（90%）之前」的收成間隔（分鐘）。"""
+    hours = [cap * ratio / rate for cap, rate in ((gold_cap, gold_rate), (mat_cap, mat_rate)) if rate > 0]
+    return max(1, int(min(hours) * 60)) if hours else None
+
+
 class BgBrowser:
     """背景模式：開一個專用的 Chrome／Edge 視窗（關掉背景節流），自動把面板放進遊戲頁。
     視窗可以縮小或被蓋住，面板照樣運作；用模擬點擊（點網頁上的按鈕），不需要遊戲畫面在前台。"""
@@ -758,6 +867,118 @@ class App:
         self.root.protocol("WM_DELETE_WINDOW", self.quit)
         self.root.after(200, self.poll)
         self._keys = {VK_F8: False, VK_F9: False, VK_F10: False}
+        if self.s.get("auto_update", True):
+            self.root.after(3000, self.check_update)
+
+    # ----- ① 依產量算收成間隔 -----
+    def calc_interval(self):
+        w = tk.Toplevel(self.root)
+        w.title("依產量算收成間隔")
+        w.attributes("-topmost", True)
+        w.resizable(False, False)
+        f = ttk.Frame(w, padding=12)
+        f.pack()
+        ttk.Label(f, justify="left", wraplength=320, text=(
+            "把滑鼠移到遊戲上方的金幣、建材上，會看到「每小時產出 ___」。\n"
+            "沒收成的產出最多累積金幣 2000、建材 1500，滿了就停產；這裡會算出快滿（90%）之前收一次的間隔。")).grid(row=0, column=0, columnspan=2, sticky="w")
+        vg = tk.StringVar(value=str(self.s.get("rate_gold", "")))
+        vm = tk.StringVar(value=str(self.s.get("rate_mat", "")))
+        ttk.Label(f, text="金幣 每小時產出").grid(row=1, column=0, sticky="e", pady=(8, 0))
+        ttk.Entry(f, textvariable=vg, width=10).grid(row=1, column=1, sticky="w", pady=(8, 0))
+        ttk.Label(f, text="建材 每小時產出").grid(row=2, column=0, sticky="e")
+        ttk.Entry(f, textvariable=vm, width=10).grid(row=2, column=1, sticky="w")
+        res = ttk.Label(f, text="", foreground="#2a6db0")
+        res.grid(row=3, column=0, columnspan=2, sticky="w", pady=6)
+
+        def compute(apply=False):
+            try:
+                g = float(vg.get() or 0)
+                m = float(vm.get() or 0)
+            except ValueError:
+                res.config(text="請輸入數字")
+                return
+            mins = smart_interval_minutes(g, m)
+            if not mins:
+                res.config(text="至少要填一個大於 0 的產量")
+                return
+            res.config(text=f"建議每 {mins} 分鐘收一次")
+            if apply:
+                self.s.update(rate_gold=g, rate_mat=m)
+                self.viv.set(str(mins))
+                self.vun.set("分")
+                self.collect()
+                w.destroy()
+
+        b = ttk.Frame(f)
+        b.grid(row=4, column=0, columnspan=2, sticky="we")
+        ttk.Button(b, text="計算", command=compute).pack(side="left")
+        ttk.Button(b, text="套用到間隔", command=lambda: compute(True)).pack(side="left", padx=6)
+
+    # ----- ⑤ 自動更新 -----
+    def check_update(self, manual=False):
+        def work():
+            try:
+                data = fetch_latest_release()
+            except Exception as ex:
+                if manual:
+                    self.root.after(0, lambda: messagebox.showerror(APP_NAME, f"檢查更新失敗：{ex}"))
+                return
+            tag = data.get("tag_name", "")
+            if ver_tuple(tag) <= ver_tuple(APP_VERSION):
+                if manual:
+                    self.root.after(0, lambda: messagebox.showinfo(APP_NAME, f"已經是最新版（v{APP_VERSION}）"))
+                return
+            if not manual and self.s.get("skip_ver") == tag:
+                return
+            self.root.after(0, lambda: self.offer_update(data))
+        threading.Thread(target=work, daemon=True).start()
+
+    def offer_update(self, data):
+        tag = data.get("tag_name", "")
+        notes = (data.get("body") or "").strip()
+        if len(notes) > 500:
+            notes = notes[:500] + "…"
+        ans = messagebox.askyesnocancel(APP_NAME, f"有新版本 {tag}（目前 v{APP_VERSION}）\n\n{notes}\n\n"
+                                                  "「是」立即更新　「否」以後再說　「取消」略過這個版本")
+        if ans is None:
+            self.s["skip_ver"] = tag
+            save_settings(self.s)
+            return
+        if not ans:
+            return
+        asset = next((a for a in data.get("assets", []) if a.get("name") == "CRRank.exe"), None)
+        if not getattr(sys, "frozen", False) or not asset:
+            webbrowser.open(data.get("html_url", f"https://github.com/{REPO}/releases/latest"))
+            return
+        self.root.title(f"{APP_NAME} — 下載 {tag} 中…")
+        threading.Thread(target=self._download_update, args=(asset["browser_download_url"], tag), daemon=True).start()
+
+    def _download_update(self, url, tag):
+        import subprocess
+        import tempfile
+        import urllib.request
+        tmp = os.path.join(tempfile.gettempdir(), f"CRRank_update_{tag}.exe")
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "CRRank-AutoHarvest"})
+            with urllib.request.urlopen(req, timeout=60) as r, open(tmp, "wb") as f:
+                total = int(r.headers.get("Content-Length") or 0)
+                got = 0
+                while True:
+                    chunk = r.read(1 << 16)
+                    if not chunk:
+                        break
+                    f.write(chunk)
+                    got += len(chunk)
+                    if total:
+                        pct = got * 100 // total
+                        self.root.after(0, lambda p=pct: self.root.title(f"{APP_NAME} — 下載 {tag} {p}%"))
+            if total and got != total:
+                raise IOError("下載不完整")
+        except Exception as ex:
+            self.root.after(0, lambda: (self.root.title(APP_NAME), messagebox.showerror(APP_NAME, f"下載更新失敗：{ex}")))
+            return
+        subprocess.Popen([tmp, "--finish-update", sys.executable, str(os.getpid())])
+        self.root.after(0, lambda: self.quit(silent=True))
 
     def toggle_bg(self):
         if self.bg.running():
@@ -801,6 +1022,7 @@ class App:
         ttk.Entry(pc, textvariable=self.viv, width=7).grid(row=r, column=1, sticky="w")
         self.vun = tk.StringVar(value=self.s["unit"])
         ttk.Combobox(pc, textvariable=self.vun, values=list(UNIT_SEC), width=4, state="readonly").grid(row=r, column=2, sticky="w")
+        ttk.Button(pc, text="📊 依產量算", command=self.calc_interval).grid(row=r, column=3, sticky="w")
         r += 1
         ttk.Label(pc, text="隨機誤差 ± 秒").grid(row=r, column=0, columnspan=2, sticky="e")
         self.vjit = tk.StringVar(value=str(self.s["jitter"]))
@@ -841,6 +1063,16 @@ class App:
             "會開一個專用的 Chrome／Edge 視窗，第一次要在裡面用 Discord 登入。遊戲頁會自動出現面板，"
             "在面板設定收成和「🛒 自動購買」後按開始，之後視窗可以縮小或被其他視窗蓋住，照樣會繼續點。"
             "背景模式期間電腦不會自動睡眠。")).grid(row=r, column=0, columnspan=4, sticky="w")
+        r += 1
+        ttk.Separator(pc).grid(row=r, column=0, columnspan=4, sticky="we", pady=6)
+        r += 1
+        vr = ttk.Frame(pc)
+        vr.grid(row=r, column=0, columnspan=4, sticky="we")
+        ttk.Label(vr, text=f"版本 v{APP_VERSION}").pack(side="left")
+        ttk.Button(vr, text="檢查更新", command=lambda: self.check_update(manual=True)).pack(side="left", padx=6)
+        self.vauto_up = tk.BooleanVar(value=self.s.get("auto_update", True))
+        ttk.Checkbutton(vr, text="開啟時自動檢查", variable=self.vauto_up,
+                        command=lambda: (self.s.__setitem__("auto_update", self.vauto_up.get()), save_settings(self.s))).pack(side="left")
 
         ttk.Label(ph, text="手機和電腦連同一個 Wi-Fi，用手機相機掃描：", font=("Microsoft JhengHei UI", 10, "bold")).pack(anchor="w")
         self.qr = tk.Canvas(ph, width=220, height=220, bg="white", highlightthickness=0)
@@ -1336,17 +1568,20 @@ class App:
             self._keys[vk] = down
         self.root.after(100, self.poll)
 
-    def quit(self):
+    def quit(self, silent=False):
         self.clicker.stop()
         self.buyer.stop()
-        if self.bg.running() and messagebox.askyesno(APP_NAME, "要一起關掉背景遊戲視窗嗎？\n（選「否」視窗會留著，面板繼續跑，但重新整理後就不會自動放回面板）"):
+        if not silent and self.bg.running() and messagebox.askyesno(APP_NAME, "要一起關掉背景遊戲視窗嗎？\n（選「否」視窗會留著，面板繼續跑，但重新整理後就不會自動放回面板）"):
             self.bg.stop()
         self.bg.stop_evt.set()
         ctypes.windll.kernel32.SetThreadExecutionState(0x80000000)
-        try:
-            self.collect()
-        except Exception:
-            pass
+        if silent:
+            save_settings(self.s)
+        else:
+            try:
+                self.collect()
+            except Exception:
+                pass
         if self.server:
             threading.Thread(target=self.server.shutdown, daemon=True).start()
         self.root.destroy()
@@ -1356,4 +1591,5 @@ class App:
 
 
 if __name__ == "__main__":
+    finish_update_if_requested()
     App().run()

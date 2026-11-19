@@ -139,7 +139,7 @@ footer{border-top:1px solid var(--line);padding:28px 0 40px;color:var(--muted);f
 <main class="wrap">
   <div class="hero">
     <div>
-      <span class="pill">目前版本 <b id="cur-ver">v1.4</b> · 免費、開源</span>
+      <span class="pill">目前版本 <b id="cur-ver">v1.5</b> · 免費、開源</span>
       <h1>知識領土的<span class="hl">自動收成</span>小幫手</h1>
       <p class="lead">定時幫你點「收成」、補貨時自動買商店的東西。電腦、Android、iPhone 都能用，設定一次就能一直掛著。</p>
       <div class="dl">
@@ -174,7 +174,9 @@ footer{border-top:1px solid var(--line);padding:28px 0 40px;color:var(--muted);f
     <h2>功能</h2>
     <p class="sec-lead">兩種點法都有：照螢幕位置點（像真的滑鼠），或直接在網頁裡找到按鈕點。</p>
     <div class="grid">
-      <div class="card"><div class="ic">🌾</div><h3>自動收成</h3><p>自訂間隔（秒／分／時）、隨機誤差、次數上限。可以自動找「收成」按鈕，沒東西可收時會跳過。</p></div>
+      <div class="card"><div class="ic">🌾</div><h3>自動收成＋聰明間隔</h3><p>自訂間隔、隨機誤差、次數上限；或開「聰明間隔」，依每小時產量在金幣／建材快滿（90%）前才收，不浪費也不亂點。</p></div>
+      <div class="card"><div class="ic">🎁</div><h3>自動領取</h3><p>定時打開任務視窗，把任務、成就、Discord 每日補給能領的「領取」都按掉，不會按「跳過」。</p></div>
+      <div class="card"><div class="ic">🔔</div><h3>能量快滿提醒</h3><p>能量到你設定的百分比就通知你回來答題：瀏覽器通知、Android 系統通知，或發到你的 Discord 頻道。</p></div>
       <div class="card"><div class="ic">🎯</div><h3>自訂點擊位置</h3><p>在螢幕上點一下就記住位置，電腦版也能把滑鼠移過去按 F8 記錄。</p></div>
       <div class="card"><div class="ic">🛒</div><h3>自動購買</h3><p>勾選要買的商品，或照順序點「物品 → 商店 → 分類 → 購買」。每樣最多買到庫存數量，缺貨就停。</p></div>
       <div class="card"><div class="ic">⏰</div><h3>補貨時自動買</h3><p>商店每 30 分鐘（整點、半點）補貨，可設定補貨後幾秒去買，或每 N 分鐘檢查一次。</p></div>
@@ -182,6 +184,7 @@ footer{border-top:1px solid var(--line);padding:28px 0 40px;color:var(--muted);f
       <div class="card"><div class="ic">🖱️</div><h3>支援滾動</h3><p>商品在畫面下面看不到時，加一個滾動步驟先捲過去再買（電腦用滾輪、手機用滑動）。</p></div>
       <div class="card"><div class="ic">🌙</div><h3>背景執行</h3><p>遊戲不用放在前台：開專用背景視窗（可以縮小、被蓋住），或直接在原本的分頁背景跑；重新整理後自動接續。</p></div>
       <div class="card"><div class="ic">📱</div><h3>手機遙控</h3><p>手機掃 QR Code，就能開始／停止另一台裝置的連點、改間隔，不用走回電腦前。</p></div>
+      <div class="card"><div class="ic">🔄</div><h3>自動更新</h3><p>電腦版開啟時檢查新版，按一下就自己下載、替換、重開；Android 會提示下載新的 APK。</p></div>
       <div class="card"><div class="ic">🤖</div><h3>Android App</h3><p>功能和電腦版一樣：浮動控制鈕、全螢幕選位置，還有內建遊戲模式（不用開無障礙權限）。</p></div>
     </div>
   </section>
@@ -246,6 +249,10 @@ footer{border-top:1px solid var(--line);padding:28px 0 40px;color:var(--muted);f
       <p>關掉背景節流只能在瀏覽器啟動時設定，而自動放回面板需要的除錯功能，新版 Chrome 不允許在你平常用的設定檔上開（為了保護登入資料），所以用一個獨立的設定檔。</p></details>
     <details class="faq"><summary>手機上要注意什麼？</summary>
       <p>手機的瀏覽器在鎖定畫面或切到別的 App 時會暫停，請讓螢幕保持亮著、遊戲分頁留在前面（可以把亮度調低省電）。</p></details>
+    <details class="faq"><summary>能量提醒要怎麼發到 Discord？</summary>
+      <p>在你的 Discord 伺服器：頻道設定 → 整合 → Webhook → 新 Webhook → 複製網址，貼到面板「⚙️ 領取與提醒」的 Discord Webhook 欄位，按「測試通知」確認。iPhone 的 Safari 不支援網頁通知，建議用這個方式。Webhook 網址只存在你自己的瀏覽器裡，不要分享給別人。</p></details>
+    <details class="faq"><summary>聰明間隔是怎麼算的？</summary>
+      <p>遊戲上方的金幣、建材會寫「每小時產出」，沒收成的產出最多累積金幣 2000、建材 1500，滿了就停產。聰明間隔會算哪一種先到 90%，在那之前收一次（例如每小時 2577 金幣 → 約 41 分鐘）。</p></details>
     <details class="faq"><summary>第一次用自動購買要怎麼確認設定對不對？</summary>
       <p>先勾一樣便宜的商品（例如能量藥水），按「立即買一次（測試）」看看有沒有點對位置、買到東西，再按開始。</p></details>
     <details class="faq"><summary>Windows 說這個檔案不常見、跳出警告？</summary>
@@ -265,7 +272,20 @@ footer{border-top:1px solid var(--line);padding:28px 0 40px;color:var(--muted);f
     <div class="log">
 
       <div class="ver latest">
-        <h3>v1.4 <span class="date">2026-11-19</span> <span class="badge">最新</span></h3>
+        <h3>v1.5 <span class="date">2026-11-20</span> <span class="badge">最新</span></h3>
+        <p class="sum">聰明收成、自動領取、能量提醒、自動更新。</p>
+        <ul>
+          <li>🌾 聰明間隔：依每小時產量，在金幣或建材快滿（90%）前才收；電腦版／Android 有「📊 依產量算」幫你算間隔</li>
+          <li>🎁 自動領取：定時領取任務、成就、Discord 每日補給的獎勵（不會按「跳過」）</li>
+          <li>🔔 能量快滿提醒：瀏覽器通知、Android 系統通知、Discord Webhook</li>
+          <li>🔄 自動更新：電腦版一鍵下載並替換重開；Android 提示下載新 APK</li>
+          <li>面板標題顯示版本號</li>
+        </ul>
+        <div class="rels"><a href="https://github.com/cxu4425-beep/crrank-autoclicker/releases/tag/v1.5">查看 v1.5 →</a><a class="src" href="https://github.com/cxu4425-beep/crrank-autoclicker/releases/download/v1.5/source-code.txt">📄 原始碼 txt</a><a class="src" href="https://github.com/cxu4425-beep/crrank-autoclicker/archive/refs/tags/v1.5.zip">📦 原始碼 zip</a></div>
+      </div>
+
+      <div class="ver">
+        <h3>v1.4 <span class="date">2026-11-19</span></h3>
         <p class="sum">背景模式：遊戲不用一直放在前台。</p>
         <ul>
           <li>🌙 電腦版「開啟背景遊戲視窗」：專用 Chrome／Edge 視窗關掉背景節流，縮小或被蓋住照樣跑，自動放進面板，期間電腦不睡眠</li>

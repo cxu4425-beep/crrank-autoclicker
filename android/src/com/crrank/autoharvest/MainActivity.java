@@ -54,20 +54,79 @@ public class MainActivity extends Activity {
         return (int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v, getResources().getDisplayMetrics());
     }
 
-    // ---------- 小工具 ----------
+    // ---------- 外觀 ----------
+    static final int C_BG = 0xFFF4F1EA, C_CARD = 0xFFFFFFFF, C_INK = 0xFF1E2230, C_MUTED = 0xFF6B7080, C_LINE = 0xFFE4DFD3,
+            C_SOFT = 0xFFF1EDE3, C_YEL = 0xFFFFC93C, C_SKY = 0xFF8FD3FF, C_RED = 0xFFFF6B6B, C_HEAD = 0xFF1E2230;
+
+    private GradientDrawable round(int color, float radiusDp, int stroke) {
+        GradientDrawable g = new GradientDrawable();
+        g.setColor(color);
+        g.setCornerRadius(dp(radiusDp));
+        if (stroke != 0) g.setStroke(dp(1), stroke);
+        return g;
+    }
+
+    /** 分隔用的標記：在 CardPage 裡代表「開始新的一張卡片」 */
+    private static final class CardBreak extends View {
+        CardBreak(android.content.Context c) {
+            super(c);
+        }
+    }
+
+    /** 自動把內容分成一張一張白色卡片的頁面 */
+    private final class CardPage extends LinearLayout {
+        private LinearLayout cur;
+        private boolean internal;
+
+        CardPage() {
+            super(MainActivity.this);
+            setOrientation(VERTICAL);
+            setPadding(dp(14), dp(12), dp(14), dp(28));
+        }
+
+        private void newCard() {
+            cur = new LinearLayout(getContext());
+            cur.setOrientation(VERTICAL);
+            cur.setPadding(dp(16), dp(12), dp(16), dp(14));
+            cur.setBackground(round(C_CARD, 18, C_LINE));
+            if (android.os.Build.VERSION.SDK_INT >= 21) cur.setElevation(dp(1.5f));
+            LayoutParams lp = new LayoutParams(-1, -2);
+            lp.setMargins(0, dp(6), 0, dp(6));
+            internal = true;
+            super.addView(cur, -1, lp);
+            internal = false;
+        }
+
+        @Override
+        public void addView(View child, int index, ViewGroup.LayoutParams params) {
+            if (internal) {
+                super.addView(child, index, params);
+                return;
+            }
+            if (child instanceof CardBreak) {
+                cur = null;
+                return;
+            }
+            if (cur == null) newCard();
+            cur.addView(child, params);
+        }
+    }
+
     private TextView label(String s, float size, boolean bold) {
         TextView t = new TextView(this);
         t.setText(s);
         t.setTextSize(size);
-        t.setTextColor(0xFF222222);
+        t.setTextColor(C_INK);
         if (bold) t.setTypeface(Typeface.DEFAULT_BOLD);
+        if (bold && size >= 16) t.setTextSize(17);
         t.setPadding(0, dp(4), 0, dp(4));
+        t.setLineSpacing(0, 1.1f);
         return t;
     }
 
     private TextView hint(String s) {
         TextView t = label(s, 13, false);
-        t.setTextColor(0xFF666666);
+        t.setTextColor(C_MUTED);
         return t;
     }
 
@@ -76,6 +135,9 @@ public class MainActivity extends Activity {
         t.setInputType(InputType.TYPE_CLASS_NUMBER | (decimal ? InputType.TYPE_NUMBER_FLAG_DECIMAL : 0));
         t.setSelectAllOnFocus(true);
         t.setMinWidth(dp(90));
+        t.setTextColor(C_INK);
+        t.setBackground(round(0xFFFFFFFF, 10, C_LINE));
+        t.setPadding(dp(12), dp(8), dp(12), dp(8));
         return t;
     }
 
@@ -84,39 +146,72 @@ public class MainActivity extends Activity {
         b.setText(s);
         b.setAllCaps(false);
         b.setOnClickListener(l);
+        b.setTextColor(C_INK);
+        b.setTextSize(15);
+        if (android.os.Build.VERSION.SDK_INT >= 21) b.setStateListAnimator(null);
+        b.setMinHeight(dp(46));
+        b.setPadding(dp(14), dp(8), dp(14), dp(8));
+        paint(b, C_SOFT);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+        lp.setMargins(dp(2), dp(4), dp(2), dp(4));
+        b.setLayoutParams(lp);
         return b;
+    }
+
+    /** 換按鈕顏色（保留按下去的波紋） */
+    private void paint(Button b, int color) {
+        b.setBackground(new android.graphics.drawable.RippleDrawable(
+                android.content.res.ColorStateList.valueOf(0x33000000), round(color, 14, 0), null));
+    }
+
+    private Button primary(String s, int color, View.OnClickListener l) {
+        Button b = btn(s, l);
+        b.setTextSize(18);
+        b.setTypeface(Typeface.DEFAULT_BOLD);
+        b.setMinHeight(dp(58));
+        paint(b, color);
+        return b;
+    }
+
+    private CheckBox check(String text) {
+        CheckBox c = new CheckBox(this);
+        c.setText(text);
+        c.setTextColor(C_INK);
+        c.setTextSize(15);
+        if (android.os.Build.VERSION.SDK_INT >= 21)
+            c.setButtonTintList(android.content.res.ColorStateList.valueOf(0xFFE0A800));
+        c.setPadding(dp(4), dp(6), 0, dp(6));
+        return c;
     }
 
     private LinearLayout row(View... vs) {
         LinearLayout r = new LinearLayout(this);
         r.setOrientation(LinearLayout.HORIZONTAL);
         r.setGravity(Gravity.CENTER_VERTICAL);
-        for (View v : vs) r.addView(v);
+        for (View v : vs) {
+            if (v instanceof Button) v.setLayoutParams(new LinearLayout.LayoutParams(-2, -2));
+            r.addView(v);
+        }
         return r;
     }
 
     private LinearLayout row2(View a, View b) {
         LinearLayout r = row();
-        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0, -2, 1);
-        r.addView(a, p);
-        r.addView(b, new LinearLayout.LayoutParams(0, -2, 1));
+        LinearLayout.LayoutParams p1 = new LinearLayout.LayoutParams(0, -2, 1);
+        p1.setMargins(0, dp(4), dp(4), dp(4));
+        LinearLayout.LayoutParams p2 = new LinearLayout.LayoutParams(0, -2, 1);
+        p2.setMargins(dp(4), dp(4), 0, dp(4));
+        r.addView(a, p1);
+        r.addView(b, p2);
         return r;
     }
 
     private LinearLayout page() {
-        LinearLayout l = new LinearLayout(this);
-        l.setOrientation(LinearLayout.VERTICAL);
-        l.setPadding(dp(16), dp(10), dp(16), dp(24));
-        return l;
+        return new CardPage();
     }
 
     private View sep() {
-        View v = new View(this);
-        v.setBackgroundColor(0xFFDDDDDD);
-        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-1, dp(1));
-        p.setMargins(0, dp(10), 0, dp(10));
-        v.setLayoutParams(p);
-        return v;
+        return new CardBreak(this);
     }
 
     @Override
@@ -127,18 +222,50 @@ public class MainActivity extends Activity {
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackgroundColor(Color.WHITE);
+        root.setBackgroundColor(C_BG);
+        if (android.os.Build.VERSION.SDK_INT >= 21) getWindow().setStatusBarColor(C_HEAD);
 
+        // 頂部標題列
+        LinearLayout head = new LinearLayout(this);
+        head.setOrientation(LinearLayout.VERTICAL);
+        head.setBackgroundColor(C_HEAD);
+        head.setPadding(dp(18), dp(14), dp(18), dp(12));
+        TextView title = new TextView(this);
+        title.setText("🌾 CR Rank 自動收成");
+        title.setTextColor(Color.WHITE);
+        title.setTextSize(20);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        TextView sub = new TextView(this);
+        sub.setText("v" + appVersion() + " · 知識領土小幫手");
+        sub.setTextColor(0xFFA7ADBF);
+        sub.setTextSize(12);
+        head.addView(title);
+        head.addView(sub);
+        root.addView(head);
+
+        // 膠囊式分頁列
+        android.widget.HorizontalScrollView hs = new android.widget.HorizontalScrollView(this);
+        hs.setHorizontalScrollBarEnabled(false);
+        hs.setBackgroundColor(C_HEAD);
         LinearLayout bar = new LinearLayout(this);
         bar.setOrientation(LinearLayout.HORIZONTAL);
-        String[] names = {"定點連點", "自動購買", "手機/遙控", "內建遊戲"};
+        bar.setPadding(dp(12), 0, dp(12), dp(12));
+        String[] names = {"🖱 定點連點", "🛒 自動購買", "📱 手機/遙控", "🎮 內建遊戲"};
         tabBtns = new Button[names.length];
         for (int i = 0; i < names.length; i++) {
             final int k = i;
-            tabBtns[i] = btn(names[i], v -> showTab(k));
-            bar.addView(tabBtns[i], new LinearLayout.LayoutParams(0, -2, 1));
+            Button t = btn(names[i], v -> showTab(k));
+            t.setTextSize(14);
+            t.setMinHeight(dp(38));
+            t.setMinimumHeight(dp(38));
+            t.setPadding(dp(14), dp(4), dp(14), dp(4));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, dp(38));
+            lp.setMargins(dp(3), 0, dp(3), 0);
+            bar.addView(t, lp);
+            tabBtns[i] = t;
         }
-        root.addView(bar);
+        hs.addView(bar);
+        root.addView(hs);
 
         FrameLayout content = new FrameLayout(this);
         tabs = new ScrollView[]{new ScrollView(this), new ScrollView(this), new ScrollView(this), new ScrollView(this)};
@@ -387,12 +514,8 @@ public class MainActivity extends Activity {
         cbnow = new CheckBox(this);
         cbnow.setText("按開始時立刻先買一次");
         p.addView(cbnow);
-        bgo = btn("▶ 開始自動購買", v -> toggleBuy());
-        bgo.setTextSize(18);
-        bgo.setTypeface(Typeface.DEFAULT_BOLD);
-        LinearLayout.LayoutParams gp = new LinearLayout.LayoutParams(-1, dp(56));
-        gp.setMargins(0, dp(10), 0, dp(4));
-        p.addView(bgo, gp);
+        bgo = primary("▶  開始自動購買", C_SKY, v -> toggleBuy());
+        p.addView(bgo);
         p.addView(btn("立即買一次（測試）", v -> {
             if (!collectBuy() || needService()) return;
             Toast.makeText(this, "1.5 秒後開始執行購買步驟", Toast.LENGTH_SHORT).show();
@@ -573,7 +696,8 @@ public class MainActivity extends Activity {
         for (int i = 0; i < tabs.length; i++) {
             tabs[i].setVisibility(i == k ? View.VISIBLE : View.GONE);
             tabBtns[i].setTypeface(i == k ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT);
-            tabBtns[i].setAlpha(i == k ? 1f : 0.6f);
+            paint(tabBtns[i], i == k ? C_YEL : 0xFF2D3346);
+            tabBtns[i].setTextColor(i == k ? C_INK : 0xFFC9CEDC);
         }
         e.prefs().edit().putInt("tab", k).apply();
     }
@@ -584,12 +708,9 @@ public class MainActivity extends Activity {
 
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
-        box.setPadding(dp(12), dp(8), dp(12), dp(8));
-        GradientDrawable g = new GradientDrawable();
-        g.setColor(0xFFFFF4D6);
-        g.setCornerRadius(dp(10));
-        box.setBackground(g);
-        acc = label("", 14, true);
+        box.setPadding(dp(14), dp(10), dp(14), dp(10));
+        box.setBackground(round(0xFFFFF4D6, 14, 0));
+        acc = label("", 15, true);
         box.addView(acc);
         box.addView(hint("自動點擊需要開啟「無障礙」裡的「" + getString(R.string.service_name) + "」。\n"
                 + "Android 13 以上若開關是灰色：到 設定 → 應用程式 → " + getString(R.string.app_name)
@@ -597,30 +718,33 @@ public class MainActivity extends Activity {
         box.addView(btn("開啟無障礙權限設定", v -> startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))));
         accBox = box;
         p.addView(box);
-
-        p.addView(label("點擊位置（螢幕座標）", 16, true));
-        ex = num(false);
-        ey = num(false);
-        p.addView(row(label("X ", 15, false), ex, label("   Y ", 15, false), ey));
-        p.addView(row2(btn("🎯 在螢幕上選位置", v -> pick()), btn("測試點一下", v -> testClick())));
-        p.addView(hint("或在遊戲畫面上按浮動控制鈕的 🎯 選位置（等同電腦版 F8）"));
         p.addView(sep());
 
+        p.addView(label("🎯 點擊位置", 16, true));
+        p.addView(hint("遊戲上「收成」按鈕在螢幕上的座標"));
+        ex = num(false);
+        ey = num(false);
+        p.addView(row(label("X  ", 15, false), ex, label("     Y  ", 15, false), ey));
+        Button pk = btn("🎯 在螢幕上選位置", v -> pick());
+        paint(pk, C_YEL);
+        p.addView(row2(pk, btn("測試點一下", v -> testClick())));
+        p.addView(hint("也可以在遊戲畫面上按浮動控制鈕的 🎯 選位置"));
+        p.addView(sep());
+
+        p.addView(label("⏱ 間隔與選項", 16, true));
         eiv = num(true);
         sun = new Spinner(this);
         ArrayAdapter<String> ad = new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, Engine.UNITS);
         sun.setAdapter(ad);
-        p.addView(row(label("間隔  ", 15, false), eiv, sun));
+        p.addView(row(label("每  ", 15, false), eiv, sun, label("  點一次", 15, false)));
         p.addView(btn("📊 依產量算間隔（快滿前才收）", v -> calcInterval()));
         ejit = num(true);
         p.addView(row(label("隨機誤差 ± 秒  ", 15, false), ejit));
         elim = num(false);
         p.addView(row(label("次數上限 (0=無限)  ", 15, false), elim));
-        cnow = new CheckBox(this);
-        cnow.setText("按開始時立刻先點一次");
+        cnow = check("按開始時立刻先點一次");
         p.addView(cnow);
-        cbub = new CheckBox(this);
-        cbub.setText("顯示浮動控制鈕（▶/■ 開始停止、🎯 選位置）");
+        cbub = check("顯示浮動控制鈕（▶ 開始停止、🎯 選位置、✕ 關掉）");
         cbub.setOnCheckedChangeListener((v, on) -> {
             e.showBubble = on;
             e.save();
@@ -631,25 +755,64 @@ public class MainActivity extends Activity {
             }
         });
         p.addView(cbub);
-
-        go = btn("▶ 開始", v -> toggle());
-        go.setTextSize(18);
-        go.setTypeface(Typeface.DEFAULT_BOLD);
-        LinearLayout.LayoutParams gp = new LinearLayout.LayoutParams(-1, dp(56));
-        gp.setMargins(0, dp(10), 0, dp(4));
-        p.addView(go, gp);
-        status = label("已停止", 14, false);
-        p.addView(status);
-        p.addView(btn("開啟知識領土網站", v -> startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(Engine.GAME_URL)))));
-        p.addView(hint("提示：按開始後 App 會退到背景，遊戲畫面要停在那個位置、不要被擋住，螢幕要保持亮著。"));
         p.addView(sep());
-        CheckBox au = new CheckBox(this);
-        au.setText("開啟時自動檢查更新");
+
+        p.addView(label("▶ 自動收成", 16, true));
+        go = primary("▶  開始自動收成", C_YEL, v -> toggle());
+        p.addView(go);
+        status = label("已停止", 14, true);
+        status.setTextColor(0xFF2F6FDE);
+        p.addView(status);
+        p.addView(hint("按開始後 App 會退到背景。遊戲畫面要停在那個位置、不要被擋住。"));
+        p.addView(btn("🌐 開啟知識領土網站", v -> startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(Engine.GAME_URL)))));
+        p.addView(sep());
+
+        p.addView(label("🌙 息屏也收成", 16, true));
+        p.addView(hint("螢幕關掉時系統不讓 App 點螢幕，所以息屏期間改用「背景遊戲」直接點網頁上的收成按鈕；"
+                + "解鎖後自動換回定點連點，並馬上補點過期的。需要先在「內建遊戲」分頁登入一次。"));
+        CheckBox off = check("息屏時改用背景遊戲繼續收成");
+        off.setChecked(e.offHarvest);
+        off.setOnCheckedChangeListener((v, on) -> {
+            e.offHarvest = on;
+            e.save();
+        });
+        p.addView(off);
+        batTxt = hint("");
+        p.addView(batTxt);
+        p.addView(btn("🔋 允許在背景不受省電限制", v -> askBattery()));
+        p.addView(sep());
+
+        p.addView(label("🔄 版本與更新", 16, true));
+        CheckBox au = check("開啟時自動檢查更新");
         au.setChecked(e.prefs().getBoolean("auto_update", true));
         au.setOnCheckedChangeListener((v, on) -> e.prefs().edit().putBoolean("auto_update", on).apply());
-        p.addView(row(label("版本 v" + appVersion() + "  ", 14, false), btn("檢查更新", v -> checkUpdate(true))));
+        p.addView(row(label("目前版本 v" + appVersion() + "    ", 15, true), btn("檢查更新", v -> checkUpdate(true))));
         p.addView(au);
         return p;
+    }
+
+    private TextView batTxt;
+
+    private boolean ignoringBattery() {
+        try {
+            android.os.PowerManager pm = (android.os.PowerManager) getSystemService(POWER_SERVICE);
+            return android.os.Build.VERSION.SDK_INT < 23 || pm.isIgnoringBatteryOptimizations(getPackageName());
+        } catch (Exception ex) {
+            return false;
+        }
+    }
+
+    /** 關掉電池最佳化：息屏久了手機會進入「打盹」斷網，不關掉的話背景遊戲可能收不到 */
+    private void askBattery() {
+        if (ignoringBattery()) {
+            Toast.makeText(this, "已經允許了 ✅", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        try {
+            startActivity(new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:" + getPackageName())));
+        } catch (Exception ex) {
+            startActivity(new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS));
+        }
     }
 
     // ---------- 分頁 2：手機 / 遙控（對應電腦版「手機」分頁） ----------
@@ -797,9 +960,14 @@ public class MainActivity extends Activity {
         if (go == null) return;
         status.setText(e.statusText());
         go.setText(e.running ? "■ 停止" : "▶ 開始");
-        go.getBackground().setTint(e.running ? 0xFFFF6B6B : 0xFFFFC93C);
+        if (go.getTag() == null || (Boolean) go.getTag() != e.running) {
+            go.setTag(e.running);
+            paint(go, e.running ? C_RED : C_YEL);
+        }
         boolean ok = e.serviceReady();
         acc.setText(ok ? "✅ 無障礙服務已開啟" : "⚠️ 尚未開啟無障礙服務");
+        if (batTxt != null)
+            batTxt.setText(ignoringBattery() ? "✅ 已允許在背景執行（不受省電限制）" : "⚠️ 建議按下面的按鈕允許，不然息屏久了手機省電會讓背景遊戲斷線");
         ((GradientDrawable) accBox.getBackground()).setColor(ok ? 0xFFE3F7E3 : 0xFFFFF4D6);
         // 只有設定本身被改（浮動鈕選位置、遠端改間隔）時才更新欄位，不蓋掉使用者正在輸入的內容
         String pos = e.x + "," + e.y, ivs = Engine.fmt(e.interval) + e.unit;
@@ -815,7 +983,10 @@ public class MainActivity extends Activity {
         }
         if (bgo != null) {
             bgo.setText(e.buyRunning ? "■ 停止自動購買" : "▶ 開始自動購買");
-            bgo.getBackground().setTint(e.buyRunning ? 0xFFFF6B6B : 0xFF8FD3FF);
+            if (bgo.getTag() == null || (Boolean) bgo.getTag() != e.buyRunning) {
+                bgo.setTag(e.buyRunning);
+                paint(bgo, e.buyRunning ? C_RED : C_SKY);
+            }
             bstatus.setText(e.buyStatus());
             StringBuilder sig = new StringBuilder();
             sig.append(e.slot).append('|');

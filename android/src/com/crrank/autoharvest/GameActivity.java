@@ -47,7 +47,8 @@ public class GameActivity extends Activity {
 
             @Override
             public void onPageFinished(WebView v, String url) {
-                if (url != null && url.contains("crrank.xpgs25.com")) v.evaluateJavascript(js, null);
+                // 自動放入：面板已經在了（或被使用者關掉）就不要再跳出來
+                if (url != null && url.contains("crrank.xpgs25.com")) v.evaluateJavascript("window.__cracAuto=1;" + js, null);
             }
         });
         setContentView(w);

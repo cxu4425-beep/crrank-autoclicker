@@ -139,7 +139,7 @@ footer{border-top:1px solid var(--line);padding:28px 0 40px;color:var(--muted);f
 <main class="wrap">
   <div class="hero">
     <div>
-      <span class="pill">目前版本 <b id="cur-ver">v1.6</b> · 免費、開源</span>
+      <span class="pill">目前版本 <b id="cur-ver">v1.8</b> · 免費、開源</span>
       <h1>知識領土的<span class="hl">自動收成</span>小幫手</h1>
       <p class="lead">定時幫你點「收成」、補貨時自動買商店的東西。電腦、Android、iPhone 都能用，設定一次就能一直掛著。</p>
       <div class="dl">
@@ -182,7 +182,7 @@ footer{border-top:1px solid var(--line);padding:28px 0 40px;color:var(--muted);f
       <div class="card"><div class="ic">⏰</div><h3>補貨時自動買</h3><p>商店每 30 分鐘（整點、半點）補貨，可設定補貨後幾秒去買，或每 N 分鐘檢查一次。</p></div>
       <div class="card"><div class="ic">💾</div><h3>3 個存檔＋輪播</h3><p>購買步驟自動存檔，可以存 3 組；開「自動輪播」就會做完存檔1接著做存檔2、存檔3。</p></div>
       <div class="card"><div class="ic">🖱️</div><h3>支援滾動</h3><p>商品在畫面下面看不到時，加一個滾動步驟先捲過去再買（電腦用滾輪、手機用滑動）。</p></div>
-      <div class="card"><div class="ic">🌙</div><h3>背景執行</h3><p>遊戲不用放在前台：裝一次擴充功能，在你原本的 Chrome／Edge（不用重新登入）背景照常收成、購買、領取，分頁也不會被卸載。</p></div>
+      <div class="card"><div class="ic">🌙</div><h3>背景與息屏也收成</h3><p>電腦裝一次擴充功能，在原本的 Chrome／Edge（不用重新登入）背景照常收成；Android 息屏時自動改用背景遊戲繼續收成。</p></div>
       <div class="card"><div class="ic">📱</div><h3>手機遙控</h3><p>手機掃 QR Code，就能開始／停止另一台裝置的連點、改間隔，不用走回電腦前。</p></div>
       <div class="card"><div class="ic">🔄</div><h3>自動更新</h3><p>電腦版開啟時檢查新版，按一下就自己下載、替換、重開；Android 會提示下載新的 APK。</p></div>
       <div class="card"><div class="ic">🤖</div><h3>Android App</h3><p>功能和電腦版一樣：浮動控制鈕、全螢幕選位置，還有內建遊戲模式（不用開無障礙權限）。</p></div>
@@ -248,6 +248,8 @@ footer{border-top:1px solid var(--line);padding:28px 0 40px;color:var(--muted);f
       </ul></details>
     <details class="faq"><summary>擴充功能更新後要做什麼？</summary>
       <p>更新電腦版程式後，它會自動把擴充功能的檔案換成新版；到 chrome://extensions（Edge：edge://extensions）按這個擴充功能的「重新載入」(↻)，再重新整理遊戲頁就好。</p></details>
+    <details class="faq"><summary>Android 關螢幕也會收成嗎？</summary>
+      <p>會（v1.8 起）。螢幕關掉時系統不讓 App 點螢幕，所以「定點連點」息屏期間會自動改用背景遊戲，由網頁面板直接按「收成」；解鎖後換回定點連點並馬上補點過期的。要先在「內建遊戲」分頁登入一次，並建議按「🔋 允許在背景不受省電限制」，不然息屏久了手機省電可能讓它斷線。</p></details>
     <details class="faq"><summary>手機上要注意什麼？</summary>
       <p>手機的瀏覽器在鎖定畫面或切到別的 App 時會暫停，請讓螢幕保持亮著、遊戲分頁留在前面（可以把亮度調低省電）。</p></details>
     <details class="faq"><summary>能量提醒要怎麼發到 Discord？</summary>
@@ -273,7 +275,21 @@ footer{border-top:1px solid var(--line);padding:28px 0 40px;color:var(--muted);f
     <div class="log">
 
       <div class="ver latest">
-        <h3>v1.6 <span class="date">2026-11-20</span> <span class="badge">最新</span></h3>
+        <h3>v1.8 <span class="date">2026-11-24</span> <span class="badge">最新</span></h3>
+        <p class="sum">介面大改、Android 息屏也收成、面板和浮動鈕都能關。</p>
+        <ul>
+          <li>🎨 電腦版介面重新設計：深色標題列＋收成／購買狀態燈、白色卡片、大按鈕、可捲動，高解析度螢幕自動放大</li>
+          <li>🎨 Android 介面重新設計：膠囊分頁、圓角卡片與按鈕；浮動控制鈕改成膠囊造型，加上 ✕ 可以關掉</li>
+          <li>🌙 Android 息屏也收成：息屏時自動改用背景遊戲收成，解鎖後換回定點連點並馬上補點</li>
+          <li>🐛 修正：手機睡眠後倒數到 0 卻沒收成（計時改用真實時間，醒來立刻補點）</li>
+          <li>🔋 新增「允許在背景不受省電限制」按鈕，避免息屏久了斷線</li>
+          <li>📱 網頁面板加上「–」收起（繼續執行）和放大的「✕」，手機也好按；自動放入不會再把關掉的面板叫出來</li>
+        </ul>
+        <div class="rels"><a href="https://github.com/cxu4425-beep/crrank-autoclicker/releases/tag/v1.8">查看 v1.8 →</a><a class="src" href="https://github.com/cxu4425-beep/crrank-autoclicker/releases/download/v1.8/source-code.txt">📄 原始碼 txt</a><a class="src" href="https://github.com/cxu4425-beep/crrank-autoclicker/archive/refs/tags/v1.8.zip">📦 原始碼 zip</a></div>
+      </div>
+
+      <div class="ver">
+        <h3>v1.6 <span class="date">2026-11-20</span></h3>
         <p class="sum">背景模式改用你原本的 Chrome，不用重新登入。</p>
         <ul>
           <li>🧩 新增 Chrome／Edge 擴充功能：在原本已登入的瀏覽器自動放入面板，不用另外登入 Discord</li>

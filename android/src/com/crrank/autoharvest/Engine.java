@@ -38,6 +38,8 @@ public final class Engine {
     public double interval, jitter;
     public String unit;
     public boolean clickNow, showBubble;
+    /** 息屏時改用背景遊戲（網頁面板點按鈕）繼續收成 */
+    public boolean offHarvest;
 
     public volatile boolean running;
     public volatile int count;
@@ -56,6 +58,7 @@ public final class Engine {
         limit = sp.getInt("limit", 0);
         clickNow = sp.getBoolean("click_now", true);
         showBubble = sp.getBoolean("bubble", true);
+        offHarvest = sp.getBoolean("off_harvest", true);
         String a = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
         SecureRandom r = new SecureRandom();
         StringBuilder sb = new StringBuilder();
@@ -75,7 +78,7 @@ public final class Engine {
     public void save() {
         sp.edit().putInt("x", x).putInt("y", y).putString("interval", fmt(interval)).putString("unit", unit)
                 .putString("jitter", fmt(jitter)).putInt("limit", limit).putBoolean("click_now", clickNow)
-                .putBoolean("bubble", showBubble).apply();
+                .putBoolean("bubble", showBubble).putBoolean("off_harvest", offHarvest).apply();
     }
 
     public SharedPreferences prefs() {
@@ -131,15 +134,13 @@ public final class Engine {
     private void begin() {
         running = true;
         done = 0;
-        h.removeCallbacks(tick);
-        if (clickNow) h.post(tick);
-        else schedule();
+        nextAt = clickNow ? 0 : System.currentTimeMillis() + (long) (waitSec() * 1000);
+        ensureWatch();
         changed();
     }
 
     public void stop() {
         running = false;
-        h.removeCallbacks(tick);
         changed();
     }
 
@@ -148,26 +149,51 @@ public final class Engine {
         else start();
     }
 
-    private final Runnable tick = new Runnable() {
+    /** 螢幕亮著而且已解鎖才點得到（息屏或鎖屏時點擊會被系統擋下）。 */
+    public static boolean screenUsable(Context c) {
+        try {
+            android.os.PowerManager pm = (android.os.PowerManager) c.getSystemService(Context.POWER_SERVICE);
+            android.app.KeyguardManager km = (android.app.KeyguardManager) c.getSystemService(Context.KEYGUARD_SERVICE);
+            return pm.isInteractive() && (km == null || !km.isKeyguardLocked());
+        } catch (Exception ex) {
+            return true;
+        }
+    }
+
+    public volatile boolean waitingScreen;
+
+    /** 每秒用「真實時間」檢查一次：手機睡眠時 postDelayed 會停住，醒來後這裡會馬上補點，不會卡在 0。 */
+    private final Runnable watch = new Runnable() {
         @Override
         public void run() {
-            if (!running) return;
-            tap();
-            done++;
-            if (limit > 0 && done >= limit) {
-                running = false;
+            if (!running && !buyRunning) return;
+            long now = System.currentTimeMillis();
+            boolean usable = screenUsable(ctx);
+            boolean due = running && now >= nextAt;
+            waitingScreen = (due || (buyRunning && !buyBusy && now >= buyNextAt)) && !usable;
+            if (due && usable) {
+                tap();
+                done++;
+                if (limit > 0 && done >= limit) running = false;
+                else nextAt = now + (long) (waitSec() * 1000);
                 changed();
-                return;
             }
-            schedule();
+            if (buyRunning && !buyBusy && buyNextAt > 0 && now >= buyNextAt && usable) {
+                buyNextAt = 0;
+                runSequence(() -> buySchedule());
+            }
+            h.postDelayed(this, 1000);
         }
     };
 
-    private void schedule() {
-        double w = waitSec();
-        nextAt = System.currentTimeMillis() + (long) (w * 1000);
-        h.postDelayed(tick, (long) (w * 1000));
-        changed();
+    private void ensureWatch() {
+        h.removeCallbacks(watch);
+        h.post(watch);
+    }
+
+    /** 螢幕打開／解鎖時呼叫：立刻檢查有沒有過期沒點的。 */
+    public void catchUp() {
+        if (running || buyRunning) ensureWatch();
     }
 
     public void once() {
@@ -189,10 +215,8 @@ public final class Engine {
         interval = v;
         for (String k : UNITS) if (k.equals(u)) unit = u;
         save();
-        if (running) {
-            h.removeCallbacks(tick);
-            begin();
-        } else changed();
+        if (running) begin();
+        else changed();
     }
 
     public int nextIn() {
@@ -206,7 +230,7 @@ public final class Engine {
     }
 
     public String statusText() {
-        String s = running ? "執行中 · 下次 " + nextIn() + " 秒" : "已停止";
+        String s = running ? (waitingScreen ? "執行中 · 等螢幕解鎖後補點" : "執行中 · 下次 " + nextIn() + " 秒") : "已停止";
         return s + " · 已點 " + count + " 次";
     }
 
@@ -376,19 +400,10 @@ public final class Engine {
         return now + (long) (Math.max(1, buyEvery) * 60000);
     }
 
-    private final Runnable buyTick = new Runnable() {
-        @Override
-        public void run() {
-            if (!buyRunning) return;
-            runSequence(() -> buySchedule());
-        }
-    };
-
     private void buySchedule() {
         if (!buyRunning) return;
         buyNextAt = buyNextTime();
-        h.removeCallbacks(buyTick);
-        h.postDelayed(buyTick, Math.max(0, buyNextAt - System.currentTimeMillis()));
+        ensureWatch();
         changed();
     }
 
@@ -397,15 +412,14 @@ public final class Engine {
         if (buyRunning) return true;
         if (!hasBuySteps()) return false;
         buyRunning = true;
-        if (buyNow) h.post(buyTick);
-        else buySchedule();
+        buyNextAt = buyNow ? 1 : buyNextTime();   // 1 = 馬上（由看門狗執行）
+        ensureWatch();
         changed();
         return true;
     }
 
     public void buyStop() {
         buyRunning = false;
-        h.removeCallbacks(buyTick);
         if (buyBusy) {
             seqGen++;
             buyBusy = false;

@@ -50,8 +50,38 @@ public class ClickService extends AccessibilityService {
         e.addListener(listener);
         if (e.showBubble) showBubble();
         h.post(ticker);
+        android.content.IntentFilter f = new android.content.IntentFilter();
+        f.addAction(Intent.ACTION_SCREEN_OFF);
+        f.addAction(Intent.ACTION_SCREEN_ON);
+        f.addAction(Intent.ACTION_USER_PRESENT);
+        registerReceiver(screenRx, f);
         e.changed();
     }
+
+    // ---------- 息屏也收成 ----------
+    private boolean autoBg;   // 背景遊戲是不是因為息屏而自動開的
+
+    private final android.content.BroadcastReceiver screenRx = new android.content.BroadcastReceiver() {
+        @Override
+        public void onReceive(android.content.Context c, Intent i) {
+            String a = i.getAction();
+            if (Intent.ACTION_SCREEN_OFF.equals(a)) {
+                // 息屏後點擊會被系統擋下 → 改用背景遊戲（網頁面板直接點「收成」按鈕）繼續收成
+                if (e.offHarvest && e.running && !bgRunning()) {
+                    autoBg = true;
+                    startBg(true);
+                }
+            } else if (Intent.ACTION_USER_PRESENT.equals(a)
+                    || (Intent.ACTION_SCREEN_ON.equals(a) && Engine.screenUsable(ClickService.this))) {
+                e.catchUp();  // 解鎖後馬上補點過期的
+                if (autoBg) {
+                    autoBg = false;
+                    if (bgWeb != null) bgWeb.evaluateJavascript("window.__crac&&window.__crac.stopHarvest&&window.__crac.stopHarvest();", null);
+                    h.postDelayed(ClickService.this::stopBg, 600);
+                }
+            }
+        }
+    };
 
     @Override
     public void onAccessibilityEvent(AccessibilityEvent event) {
@@ -75,6 +105,10 @@ public class ClickService extends AccessibilityService {
 
     private void cleanup() {
         if (inst == this) inst = null;
+        try {
+            unregisterReceiver(screenRx);
+        } catch (Exception ignored) {
+        }
         h.removeCallbacksAndMessages(null);
         if (e != null) {
             e.stop();
@@ -112,8 +146,24 @@ public class ClickService extends AccessibilityService {
         return bgShown;
     }
 
-    @android.annotation.SuppressLint("SetJavaScriptEnabled")
     public void startBg() {
+        startBg(false);
+    }
+
+    /** 每 30 秒從 Java 叫醒網頁面板（息屏時網頁計時器會被拖慢，這裡用 wake lock 保證會跑） */
+    private final Runnable bgTick = new Runnable() {
+        @Override
+        public void run() {
+            if (bgWeb == null) return;
+            bgWeb.resumeTimers();
+            bgWeb.evaluateJavascript("window.__crac&&window.__crac.tick&&window.__crac.tick();"
+                    + (autoBg ? "window.__crac&&window.__crac.ensureHarvest&&window.__crac.ensureHarvest();" : ""), null);
+            h.postDelayed(this, 30000);
+        }
+    };
+
+    @android.annotation.SuppressLint("SetJavaScriptEnabled")
+    public void startBg(final boolean quiet) {
         if (bgBox != null || wm == null) return;
         bgWeb = new android.webkit.WebView(this);
         android.webkit.WebSettings s = bgWeb.getSettings();
@@ -129,7 +179,12 @@ public class ClickService extends AccessibilityService {
         bgWeb.setWebViewClient(new android.webkit.WebViewClient() {
             @Override
             public void onPageFinished(android.webkit.WebView v, String url) {
-                if (url != null && url.contains("crrank.xpgs25.com")) v.evaluateJavascript(js, null);
+                if (url != null && url.contains("crrank.xpgs25.com")) {
+                    v.evaluateJavascript("window.__cracAuto=1;" + js, null);
+                    if (autoBg) h.postDelayed(() -> {
+                        if (bgWeb != null) bgWeb.evaluateJavascript("window.__crac&&window.__crac.ensureHarvest&&window.__crac.ensureHarvest();", null);
+                    }, 2000);
+                }
             }
         });
         bgBox = new FrameLayout(this);
@@ -138,10 +193,8 @@ public class ClickService extends AccessibilityService {
         LinearLayout bar = new LinearLayout(this);
         bar.setGravity(Gravity.END);
         bar.setPadding(dp(6), dp(30), dp(6), dp(6));
-        TextView hide = chip("🌙 隱藏到背景", 0xFF8FD3FF);
-        TextView close = chip("✕ 關閉背景遊戲", 0xFFFF6B6B);
-        hide.setTextSize(14);
-        close.setTextSize(14);
+        TextView hide = pill("🌙 隱藏到背景", C_SKY);
+        TextView close = pill("✕ 關閉背景遊戲", C_RED);
         LinearLayout.LayoutParams g = new LinearLayout.LayoutParams(-2, -2);
         g.setMargins(dp(6), 0, 0, 0);
         bar.addView(hide);
@@ -174,7 +227,9 @@ public class ClickService extends AccessibilityService {
             wakeLock.acquire(12 * 60 * 60 * 1000L);
         } catch (Exception ignored) {
         }
-        Toast.makeText(this, "背景遊戲已開始：可以切去用別的 App，浮動鈕 🌙 可以顯示／隱藏", Toast.LENGTH_LONG).show();
+        if (!quiet) Toast.makeText(this, "背景遊戲已開始：可以切去用別的 App，浮動鈕 🌙 可以顯示／隱藏", Toast.LENGTH_LONG).show();
+        h.removeCallbacks(bgTick);
+        h.postDelayed(bgTick, 30000);
         updateBubble();
     }
 
@@ -192,6 +247,7 @@ public class ClickService extends AccessibilityService {
     }
 
     public void stopBg() {
+        h.removeCallbacks(bgTick);
         if (bgBox != null) {
             try {
                 wm.removeView(bgBox);
@@ -232,20 +288,46 @@ public class ClickService extends AccessibilityService {
     }
 
     // ---------- 浮動控制鈕 ----------
+    private static final int C_DARK = 0xF21E2230, C_IDLE = 0xFF3A4157, C_YEL = 0xFFFFC93C, C_RED = 0xFFFF6B6B,
+            C_SKY = 0xFF8FD3FF, C_PUR = 0xFFB79CFF, C_CLOSE = 0xFF6B3442;
+
+    private TextView pill(String text, int bg) {
+        TextView t = new TextView(this);
+        t.setText(text);
+        t.setTextColor(0xFF1E2230);
+        t.setTextSize(14);
+        t.setPadding(dp(14), dp(8), dp(14), dp(8));
+        GradientDrawable g = new GradientDrawable();
+        g.setColor(bg);
+        g.setCornerRadius(dp(20));
+        t.setBackground(g);
+        return t;
+    }
+
+    /** 圓形小按鈕 */
     private TextView chip(String text, int bg) {
         TextView t = new TextView(this);
         t.setText(text);
-        t.setTextColor(bg == 0 ? Color.WHITE : 0xFF222222);
-        t.setTextSize(18);
+        t.setTextColor(bg == C_IDLE || bg == C_CLOSE ? Color.WHITE : 0xFF1E2230);
+        t.setTextSize(16);
         t.setGravity(Gravity.CENTER);
-        t.setPadding(dp(10), dp(4), dp(10), dp(4));
-        if (bg != 0) {
-            GradientDrawable g = new GradientDrawable();
-            g.setColor(bg);
-            g.setCornerRadius(dp(8));
-            t.setBackground(g);
-        }
+        GradientDrawable g = new GradientDrawable();
+        g.setShape(GradientDrawable.OVAL);
+        g.setColor(bg);
+        t.setBackground(g);
+        t.setLayoutParams(chipLp());
         return t;
+    }
+
+    private LinearLayout.LayoutParams chipLp() {
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(38), dp(38));
+        lp.setMargins(dp(3), 0, dp(3), 0);
+        return lp;
+    }
+
+    private void setChip(TextView t, int bg) {
+        ((GradientDrawable) t.getBackground()).setColor(bg);
+        t.setTextColor(bg == C_IDLE || bg == C_CLOSE ? Color.WHITE : 0xFF1E2230);
     }
 
     public void showBubble() {
@@ -254,32 +336,49 @@ public class ClickService extends AccessibilityService {
         bubble.setOrientation(LinearLayout.HORIZONTAL);
         bubble.setGravity(Gravity.CENTER_VERTICAL);
         GradientDrawable bg = new GradientDrawable();
-        bg.setColor(0xEE1E2230);
-        bg.setCornerRadius(dp(14));
+        bg.setColor(C_DARK);
+        bg.setCornerRadius(dp(26));
+        bg.setStroke(dp(1), 0x33FFFFFF);
         bubble.setBackground(bg);
-        bubble.setPadding(dp(4), dp(4), dp(6), dp(4));
+        bubble.setPadding(dp(4), dp(5), dp(5), dp(5));
+        if (android.os.Build.VERSION.SDK_INT >= 21) bubble.setElevation(dp(6));
 
-        TextView handle = chip("☰", 0);
+        TextView handle = new TextView(this);   // 拖曳把手
+        handle.setText("⋮⋮");
+        handle.setTextColor(0x99FFFFFF);
+        handle.setTextSize(16);
+        handle.setGravity(Gravity.CENTER);
+        handle.setLayoutParams(new LinearLayout.LayoutParams(dp(26), dp(38)));
+
         bubbleTxt = new TextView(this);
         bubbleTxt.setTextColor(Color.WHITE);
         bubbleTxt.setTextSize(11);
-        bubbleTxt.setPadding(0, 0, dp(6), 0);
-        bubbleGo = chip("▶", 0xFFFFC93C);
-        TextView pick = chip("🎯", 0xFF8FD3FF);
-        bubbleBuy = chip("🛒", 0xFFDDDDDD);
-        LinearLayout.LayoutParams gap = new LinearLayout.LayoutParams(-2, -2);
-        gap.setMargins(dp(4), 0, 0, 0);
-        LinearLayout.LayoutParams gap2 = new LinearLayout.LayoutParams(-2, -2);
-        gap2.setMargins(dp(4), 0, 0, 0);
+        bubbleTxt.setLineSpacing(0, 1.05f);
+        bubbleTxt.setPadding(dp(2), 0, dp(6), 0);
+        bubbleTxt.setMinWidth(dp(58));
+
+        bubbleGo = chip("▶", C_YEL);
+        TextView pick = chip("🎯", C_IDLE);
+        bubbleBuy = chip("🛒", C_IDLE);
+        bubbleBg = chip("🌙", C_IDLE);
+        TextView bx = chip("✕", C_CLOSE);
         bubble.addView(handle);
         bubble.addView(bubbleTxt);
         bubble.addView(bubbleGo);
-        bubble.addView(pick, gap);
-        bubble.addView(bubbleBuy, gap2);
-        bubbleBg = chip("🌙", 0xFFDDDDDD);
-        LinearLayout.LayoutParams gap3 = new LinearLayout.LayoutParams(-2, -2);
-        gap3.setMargins(dp(4), 0, 0, 0);
-        bubble.addView(bubbleBg, gap3);
+        bubble.addView(pick);
+        bubble.addView(bubbleBuy);
+        bubble.addView(bubbleBg);
+        bubble.addView(bx);
+
+        bubbleGo.setOnClickListener(v -> {
+            if (e.running) e.stop();
+            else e.start();
+        });
+        pick.setOnClickListener(v -> startPick());
+        bubbleBuy.setOnClickListener(v -> {
+            if (e.buyRunning) e.buyStop();
+            else if (!e.buyStart()) Toast.makeText(this, "先在 App 的「自動購買」分頁設定步驟位置", Toast.LENGTH_LONG).show();
+        });
         bubbleBg.setOnClickListener(v -> {
             if (!bgRunning()) startBg();
             else showBg(!bgShown);
@@ -291,21 +390,18 @@ public class ClickService extends AccessibilityService {
             }
             return true;
         });
-        bubbleBuy.setOnClickListener(v -> {
-            if (e.buyRunning) e.buyStop();
-            else if (!e.buyStart()) Toast.makeText(this, "先在 App 的「自動購買」分頁設定步驟位置", Toast.LENGTH_LONG).show();
+        bx.setOnClickListener(v -> {   // 關掉浮動控制鈕（連點照常繼續）
+            e.showBubble = false;
+            e.save();
+            hideBubble();
+            e.changed();
+            Toast.makeText(this, "已關掉浮動控制鈕（連點仍會繼續）。要再打開：App「定點連點」分頁勾「顯示浮動控制鈕」", Toast.LENGTH_LONG).show();
         });
-
-        bubbleGo.setOnClickListener(v -> {
-            if (e.running) e.stop();
-            else e.start();
-        });
-        pick.setOnClickListener(v -> startPick());
 
         blp = overlayParams(-2, -2, 0);
         blp.x = e.prefs().getInt("bx", dp(8));
         blp.y = e.prefs().getInt("by", dp(160));
-        handle.setOnTouchListener(new View.OnTouchListener() {
+        View.OnTouchListener drag = new View.OnTouchListener() {
             float sx, sy;
             int ox, oy;
 
@@ -329,7 +425,9 @@ public class ClickService extends AccessibilityService {
                 }
                 return false;
             }
-        });
+        };
+        handle.setOnTouchListener(drag);
+        bubbleTxt.setOnTouchListener(drag);
         try {
             wm.addView(bubble, blp);
         } catch (Exception ex) {
@@ -352,11 +450,12 @@ public class ClickService extends AccessibilityService {
     private void updateBubble() {
         if (bubble == null || e == null) return;
         bubbleGo.setText(e.running ? "■" : "▶");
-        ((GradientDrawable) bubbleGo.getBackground()).setColor(e.running ? 0xFFFF6B6B : 0xFFFFC93C);
-        bubbleTxt.setText(e.running ? "下次 " + e.nextIn() + "s\n已點 " + e.count : "已停止\n已點 " + e.count);
-        ((GradientDrawable) bubbleBuy.getBackground()).setColor(e.buyBusy ? 0xFFFFC93C : e.buyRunning ? 0xFF8FD3FF : 0xFFDDDDDD);
-        if (bubbleBg != null)
-            ((GradientDrawable) bubbleBg.getBackground()).setColor(bgShown ? 0xFFFFC93C : bgRunning() ? 0xFFB79CFF : 0xFFDDDDDD);
+        setChip(bubbleGo, e.running ? C_RED : C_YEL);
+        String top = e.running ? (e.waitingScreen ? "等解鎖" : "收成中") : "已停止";
+        String bottom = e.running && !e.waitingScreen ? e.nextIn() + "s · " + e.count + "次" : "已點 " + e.count;
+        bubbleTxt.setText(top + "\n" + bottom);
+        setChip(bubbleBuy, e.buyBusy ? C_YEL : e.buyRunning ? C_SKY : C_IDLE);
+        setChip(bubbleBg, bgShown ? C_YEL : bgRunning() ? C_PUR : C_IDLE);
     }
 
     // ---------- 全螢幕選位置 ----------

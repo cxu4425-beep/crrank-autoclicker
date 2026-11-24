@@ -16,7 +16,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from tkinter import filedialog, messagebox, ttk
 
 APP_NAME = "CR Rank 自動收成器"
-APP_VERSION = "1.6"
+APP_VERSION = "1.8"
 REPO = "cxu4425-beep/crrank-autoclicker"
 GAME_URL = "https://crrank.xpgs25.com/game"
 
@@ -141,14 +141,19 @@ def save_settings(s):
 # ---------- 手機用的網頁腳本（在網頁裡直接點按鈕） ----------
 MOBILE_JS = r"""
 (function(){
-if(window.__crac){window.__crac.show();return;}
+if(window.__crac){if(!window.__cracAuto)window.__crac.show();window.__cracAuto=0;return;}
+window.__cracAuto=0;
 var K='crac_cfg',c={iv:60,mode:'auto',x:50,y:50,px:10,py:90};
 try{var o=JSON.parse(localStorage.getItem(K)||'{}');for(var k in o)c[k]=o[k];}catch(e){}
 function save(){try{localStorage.setItem(K,JSON.stringify(c));}catch(e){}}
 var t=null,tick=null,n=0,next=0,last='';
 var p=document.createElement('div');
 p.style.cssText='position:fixed;z-index:2147483647;background:#1e2230;color:#fff;font:14px sans-serif;padding:10px;border-radius:12px;box-shadow:0 4px 18px rgba(0,0,0,.45);width:220px;max-height:85vh;overflow:auto;touch-action:none;line-height:1.7';
-p.innerHTML='<div data-h style="font-weight:bold;cursor:move;user-select:none">&#9776; 自動收成 <span style="font-weight:normal;font-size:11px;opacity:.6">v__VER__</span><span data-x style="float:right;cursor:pointer;padding:0 4px">&#10005;</span></div>'+
+p.innerHTML='<div data-h style="font-weight:bold;cursor:move;user-select:none;display:flex;align-items:center;gap:4px;min-height:34px">'+
+'<span style="flex:1;white-space:nowrap">&#9776; 自動收成 <span data-ms style="font-size:12px"></span> <span data-vl style="font-weight:normal;font-size:11px;opacity:.6">v__VER__</span></span>'+
+'<span data-hb data-mn title="收起（繼續執行）" style="cursor:pointer;font-size:18px;line-height:1;padding:10px 14px;border-radius:8px;background:#2d3346">&#8211;</span>'+
+'<span data-hb data-x title="關閉（停止全部）" style="cursor:pointer;font-size:18px;line-height:1;padding:10px 14px;border-radius:8px;background:#3a2d36">&#10005;</span></div>'+
+'<div data-body>'+
 '<label>間隔(秒) <input data-iv type="number" min="1" style="width:80px;font-size:14px"></label><br>'+
 '<label title="從資源列讀每小時產量，在金幣或建材快滿（90%）之前才收"><input type="checkbox" data-sm> 聰明間隔（快滿前才收）</label><br>'+
 '<label><input type="radio" name="cracm" value="auto"> 自動找「收成」按鈕</label><br>'+
@@ -168,7 +173,7 @@ p.innerHTML='<div data-h style="font-weight:bold;cursor:move;user-select:none">&
 '<label><input type="checkbox" data-en> 能量快滿時提醒</label> 達 <input data-enp type="number" min="10" max="100" style="width:46px;font-size:14px">%<br>'+
 'Discord Webhook（選填）<input data-wh placeholder="https://discord.com/api/webhooks/…" style="width:100%;font-size:12px;box-sizing:border-box">'+
 '<button data-nt style="font-size:13px;margin-top:4px">測試通知</button>'+
-'<div data-xs style="font-size:12px;opacity:.85;margin-top:4px"></div></div></div>';
+'<div data-xs style="font-size:12px;opacity:.85;margin-top:4px"></div></div></div></div>';
 document.body.appendChild(p);
 var mk=document.createElement('div');
 mk.style.cssText='position:fixed;z-index:2147483646;width:22px;height:22px;margin:-11px 0 0 -11px;border:3px solid #ff3b5c;border-radius:50%;pointer-events:none;display:none';
@@ -203,14 +208,17 @@ q('data-s').textContent=(t?'執行中 · 下次 '+(s>=60?mm:s+' 秒')+(c.smart&&
 function start(){if(t)return;c.run=true;save();var g=q('data-go');g.textContent='停止';g.style.background='#ff6b6b';t=-1;arm(doClick());tick=setInterval(upd,1000);upd();}
 function stop(){c.run=false;save();clearTimeout(t);clearInterval(tick);t=null;var g=q('data-go');g.textContent='開始';g.style.background='#ffc93c';upd();}
 q('data-go').onclick=function(){t?stop():start();};
-q('data-x').onclick=function(){stop();p.style.display='none';mk.style.display='none';};
+q('data-x').onclick=function(){stop();c.closed=true;save();p.style.display='none';mk.style.display='none';};
+function setMin(v){c.min=!!v;save();q('data-body').style.display=v?'none':'';p.style.width=v?'auto':'220px';
+q('data-mn').innerHTML=v?'&#9634;':'&#8211;';q('data-mn').title=v?'展開':'收起（繼續執行）';q('data-vl').style.display=v?'none':'';}
+q('data-mn').onclick=function(){setMin(!c.min);place();};
 q('data-pk').onclick=function(){var ov=document.createElement('div');
 ov.style.cssText='position:fixed;inset:0;z-index:2147483647;background:rgba(0,0,0,.35);color:#fff;font:bold 20px sans-serif;display:flex;align-items:center;justify-content:center;text-align:center;touch-action:none';
 ov.textContent='點一下要自動點擊的位置';document.body.appendChild(ov);
 ov.addEventListener('pointerdown',function(e){e.preventDefault();e.stopPropagation();c.x=e.clientX/innerWidth*100;c.y=e.clientY/innerHeight*100;c.mode='pos';
 for(var j=0;j<rs.length;j++)rs[j].checked=rs[j].value=='pos';save();showMk();setTimeout(function(){ov.remove();},50);},{once:true});};
 var hd=q('data-h'),dx=0,dy=0,dr=false;
-hd.addEventListener('pointerdown',function(e){if(e.target.hasAttribute('data-x'))return;dr=true;dx=e.clientX-c.px;dy=e.clientY-c.py;hd.setPointerCapture(e.pointerId);});
+hd.addEventListener('pointerdown',function(e){if(e.target.closest&&e.target.closest('[data-hb]'))return;dr=true;dx=e.clientX-c.px;dy=e.clientY-c.py;hd.setPointerCapture(e.pointerId);});
 hd.addEventListener('pointermove',function(e){if(!dr)return;c.px=e.clientX-dx;c.py=e.clientY-dy;place();});
 hd.addEventListener('pointerup',function(){dr=false;save();});
 if(!c.buy)c.buy=[];if(!c.items)c.items=[];if(!c.bmode)c.bmode='restock';if(!c.bmin)c.bmin=10;
@@ -301,7 +309,13 @@ if(t&&t!==-1&&next&&now>=next+1000)arm(doClick());
 if(B.on&&!B.busy&&B.at&&now>=B.at+1000){clearTimeout(B.t);buyRun().then(bsched);}
 if(c.cl&&!X.busy&&X.at&&now>=X.at+1000){clearTimeout(X.t);claimAll().then(clSched);}
 checkEnergy();}
-window.__crac={show:function(){p.style.display='';showMk();},tick:wake};
+function mini(){var on=!!t||B.on||c.cl;q('data-ms').textContent=c.min?(on?'🟢':'⚪'):'';}
+setInterval(mini,1000);
+if(c.closed){c.closed=false;c.min=true;}  /* 關掉後重新載入：只顯示收起的小條，不擋畫面 */
+setMin(!!c.min);mini();
+window.__crac={show:function(){c.closed=false;p.style.display='';setMin(false);place();showMk();},tick:wake,
+ensureHarvest:function(){if(t)return;c.mode='auto';for(var j=0;j<rs.length;j++)rs[j].checked=rs[j].value=='auto';start();},
+stopHarvest:function(){if(t)stop();}};
 })();
 """
 
@@ -911,6 +925,120 @@ def make_handler(app):
     return H
 
 
+# ---------- 介面外觀 ----------
+PAL = dict(bg="#F4F1EA", card="#FFFFFF", ink="#1E2230", muted="#6B7080", line="#E4DFD3", soft="#F1EDE3",
+           accent="#FFC93C", accent_h="#F2B622", sky="#8FD3FF", sky_h="#6FC3F7", red="#FF6B6B", red_h="#F25252",
+           head="#1E2230", green="#2A8A4A", blue="#2F6FDE", sel="#FFE8A6")
+FONT = "Microsoft JhengHei UI"
+UI_K = 1.0  # 螢幕縮放比例（高 DPI 時大於 1）
+
+
+def WRAP(px=430):
+    return int(px * UI_K)
+
+
+def setup_theme(root):
+    st = ttk.Style(root)
+    st.theme_use("clam")
+    P = PAL
+    root.configure(bg=P["bg"])
+    st.configure(".", background=P["bg"], foreground=P["ink"], font=(FONT, 10), bordercolor=P["line"],
+                 lightcolor=P["card"], darkcolor=P["line"], troughcolor=P["soft"], focuscolor=P["accent"],
+                 selectbackground=P["sel"], selectforeground=P["ink"], insertcolor=P["ink"])
+    st.configure("TFrame", background=P["bg"])
+    st.configure("Card.TFrame", background=P["card"], relief="solid", borderwidth=1, bordercolor=P["line"])
+    st.configure("Row.TFrame", background=P["card"])
+    for name, extra in (("Card.TLabel", {}), ("Muted.TLabel", dict(foreground=P["muted"], font=(FONT, 9))),
+                        ("Title.TLabel", dict(font=(FONT, 12, "bold"))), ("Bold.TLabel", dict(font=(FONT, 10, "bold"))),
+                        ("Ok.TLabel", dict(foreground=P["green"], font=(FONT, 9))),
+                        ("Info.TLabel", dict(foreground=P["blue"], font=(FONT, 10, "bold")))):
+        st.configure(name, background=P["card"], **extra)
+    st.configure("TButton", padding=(12, 6), background=P["soft"], bordercolor=P["line"], relief="flat", font=(FONT, 10))
+    st.map("TButton", background=[("pressed", P["line"]), ("active", "#ECE6D8")])
+    st.configure("Accent.TButton", background=P["accent"], bordercolor=P["accent_h"], font=(FONT, 10, "bold"))
+    st.map("Accent.TButton", background=[("pressed", P["accent_h"]), ("active", P["accent_h"])])
+    st.configure("TEntry", fieldbackground="#FFFFFF", bordercolor=P["line"], padding=(6, 4))
+    st.map("TEntry", bordercolor=[("focus", P["blue"])], lightcolor=[("focus", P["blue"])])
+    st.configure("TCombobox", fieldbackground="#FFFFFF", background=P["soft"], bordercolor=P["line"], padding=(6, 3), arrowsize=14)
+    st.map("TCombobox", fieldbackground=[("readonly", "#FFFFFF")], bordercolor=[("focus", P["blue"])])
+    for w in ("TCheckbutton", "TRadiobutton"):
+        st.configure(w, background=P["card"], indicatorbackground="#FFFFFF", indicatorforeground=P["ink"], padding=(0, 3))
+        st.map(w, background=[("active", P["card"])], indicatorbackground=[("selected", P["accent"])])
+    st.configure("TNotebook", background=P["bg"], borderwidth=0, tabmargins=(10, 8, 10, 0))
+    st.configure("TNotebook.Tab", padding=(18, 8), background="#E7E1D3", foreground=P["muted"], font=(FONT, 10, "bold"), borderwidth=0)
+    st.map("TNotebook.Tab", background=[("selected", P["card"])], foreground=[("selected", P["ink"])],
+           expand=[("selected", (0, 2, 0, 0))])
+    st.configure("Treeview", background=P["card"], fieldbackground=P["card"], bordercolor=P["line"], rowheight=int(26 * UI_K), font=(FONT, 10))
+    st.configure("Treeview.Heading", background=P["soft"], font=(FONT, 9, "bold"), relief="flat", padding=(4, 4))
+    st.map("Treeview", background=[("selected", P["sel"])], foreground=[("selected", P["ink"])])
+    st.configure("TSeparator", background=P["line"])
+    st.configure("Vertical.TScrollbar", background=P["soft"], bordercolor=P["bg"], arrowcolor=P["muted"], gripcount=0)
+    return st
+
+
+class HoverButton(tk.Button):
+    """扁平大按鈕，滑鼠移上去會變色。"""
+
+    def __init__(self, parent, text, command, bg, hover, **kw):
+        super().__init__(parent, text=text, command=command, relief="flat", bd=0, cursor="hand2",
+                         font=(FONT, 12, "bold"), fg=PAL["ink"], activeforeground=PAL["ink"], padx=14, pady=10, **kw)
+        self.set_colors(bg, hover)
+        self.bind("<Enter>", lambda e: self.config(bg=self._hover))
+        self.bind("<Leave>", lambda e: self.config(bg=self._bg))
+
+    def set_colors(self, bg, hover):
+        self._bg, self._hover = bg, hover
+        self.config(bg=bg, activebackground=hover)
+
+
+class ScrollFrame(ttk.Frame):
+    """可以用滑鼠滾輪捲動的分頁內容。"""
+
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.canvas = tk.Canvas(self, bg=PAL["bg"], highlightthickness=0, bd=0)
+        sb = ttk.Scrollbar(self, orient="vertical", command=self.canvas.yview)
+        self.inner = ttk.Frame(self.canvas, padding=(12, 6, 12, 12))
+        self._win = self.canvas.create_window((0, 0), window=self.inner, anchor="nw")
+        self.canvas.configure(yscrollcommand=sb.set)
+        self.canvas.pack(side="left", fill="both", expand=True)
+        sb.pack(side="right", fill="y")
+        self.inner.bind("<Configure>", lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
+        self.canvas.bind("<Configure>", lambda e: self.canvas.itemconfigure(self._win, width=e.width))
+        self.bind_all("<MouseWheel>", self._wheel, add="+")
+
+    def _wheel(self, e):
+        w = self.winfo_containing(e.x_root, e.y_root)
+        while w is not None:
+            if w is self:
+                if self.inner.winfo_height() > self.canvas.winfo_height():
+                    self.canvas.yview_scroll(int(-e.delta / 120), "units")
+                return
+            w = w.master
+
+
+def card(parent, title, subtitle=None):
+    """白色卡片＋標題，回傳放內容的框。"""
+    outer = ttk.Frame(parent, style="Card.TFrame", padding=(16, 12, 16, 14))
+    outer.pack(fill="x", pady=6)
+    ttk.Label(outer, text=title, style="Title.TLabel").pack(anchor="w")
+    if subtitle:
+        ttk.Label(outer, text=subtitle, style="Muted.TLabel", wraplength=WRAP(), justify="left").pack(anchor="w", pady=(0, 4))
+    body = ttk.Frame(outer, style="Row.TFrame")
+    body.pack(fill="x", pady=(6, 0))
+    return body
+
+
+def row(parent, pady=3):
+    r = ttk.Frame(parent, style="Row.TFrame")
+    r.pack(fill="x", pady=pady)
+    return r
+
+
+def lbl(parent, text, style="Card.TLabel", **kw):
+    return ttk.Label(parent, text=text, style=style, **kw)
+
+
 class App:
     def __init__(self):
         self.s = load_settings()
@@ -924,6 +1052,14 @@ class App:
         except Exception:
             pass
         self.root.attributes("-topmost", True)
+        global UI_K
+        try:
+            UI_K = max(1.0, (user32.GetDpiForWindow(self.root.winfo_id()) or 96) / 96.0)
+        except Exception:
+            UI_K = 1.0
+        setup_theme(self.root)
+        self.root.geometry(f"{int(560 * UI_K)}x{min(int(800 * UI_K), self.root.winfo_screenheight() - 90)}")
+        self.root.minsize(int(520 * UI_K), int(520 * UI_K))
         self.clicker.on_change = lambda: self.root.after(0, self.refresh_btn)
         self.buyer = BuyRunner(self.s)
         self.buyer.on_change = lambda: self.root.after(0, self.refresh_buy)
@@ -1089,112 +1225,122 @@ class App:
 
     # ----- UI -----
     def build_ui(self):
-        nb = ttk.Notebook(self.root)
-        nb.pack(fill="both", expand=True, padx=8, pady=8)
-        self.nb = nb
-        pc = ttk.Frame(nb, padding=10)
-        buy = ttk.Frame(nb, padding=10)
-        ph = ttk.Frame(nb, padding=10)
-        nb.add(pc, text=" 電腦連點 ")
-        nb.add(buy, text=" 自動購買 ")
-        nb.add(ph, text=" 手機 ")
-        self.buy_tab = buy
-        self.build_buy_tab(buy)
+        P = PAL
+        # ---- 頂部標題列 ----
+        head = tk.Frame(self.root, bg=P["head"], padx=16, pady=12)
+        head.pack(fill="x")
+        logo = tk.Canvas(head, width=34, height=34, bg=P["head"], highlightthickness=0)
+        logo.create_oval(1, 1, 33, 33, fill=P["accent"], outline="")
+        logo.create_oval(8, 8, 26, 26, fill=P["head"], outline="")
+        logo.create_oval(12, 12, 22, 22, fill=P["accent"], outline="")
+        logo.pack(side="left")
+        tt = tk.Frame(head, bg=P["head"])
+        tt.pack(side="left", padx=10)
+        tk.Label(tt, text="CR Rank 自動收成器", bg=P["head"], fg="#FFFFFF", font=(FONT, 13, "bold")).pack(anchor="w")
+        tk.Label(tt, text=f"v{APP_VERSION} · 知識領土小幫手", bg=P["head"], fg="#A7ADBF", font=(FONT, 9)).pack(anchor="w")
+        chips = tk.Frame(head, bg=P["head"])
+        chips.pack(side="right")
+        self.chip_h = tk.Label(chips, text="收成 ● 停止", bg="#2D3346", fg="#C9CEDC", font=(FONT, 9, "bold"), padx=10, pady=3)
+        self.chip_h.pack(anchor="e", pady=(0, 4))
+        self.chip_b = tk.Label(chips, text="購買 ● 停止", bg="#2D3346", fg="#C9CEDC", font=(FONT, 9, "bold"), padx=10, pady=3)
+        self.chip_b.pack(anchor="e")
 
-        r = 0
-        ttk.Label(pc, text="點擊位置（螢幕座標）", font=("Microsoft JhengHei UI", 10, "bold")).grid(row=r, column=0, columnspan=4, sticky="w")
-        r += 1
+        nb = ttk.Notebook(self.root)
+        nb.pack(fill="both", expand=True)
+        self.nb = nb
+        pcs, buys, phs = ScrollFrame(nb), ScrollFrame(nb), ScrollFrame(nb)
+        nb.add(pcs, text="🖱 電腦連點")
+        nb.add(buys, text="🛒 自動購買")
+        nb.add(phs, text="📱 手機")
+        self.buy_tab = buys
+        self.build_buy_tab(buys.inner)
+        pc, ph = pcs.inner, phs.inner
+
+        # ---- 點擊位置 ----
+        c = card(pc, "🎯 點擊位置", "遊戲上「收成」按鈕在螢幕上的座標。")
+        r = row(c)
         self.vx = tk.IntVar(value=self.s["x"])
         self.vy = tk.IntVar(value=self.s["y"])
-        ttk.Label(pc, text="X").grid(row=r, column=0, sticky="e")
-        ttk.Entry(pc, textvariable=self.vx, width=7).grid(row=r, column=1, sticky="w")
-        ttk.Label(pc, text="Y").grid(row=r, column=2, sticky="e")
-        ttk.Entry(pc, textvariable=self.vy, width=7).grid(row=r, column=3, sticky="w")
-        r += 1
-        ttk.Button(pc, text="🎯 在螢幕上選位置", command=self.pick).grid(row=r, column=0, columnspan=2, sticky="we", pady=4)
-        ttk.Button(pc, text="測試點一下", command=self.test_click).grid(row=r, column=2, columnspan=2, sticky="we", pady=4)
-        r += 1
-        ttk.Label(pc, text="或把滑鼠移到「收成」按鈕上按 F8 記錄", foreground="#666").grid(row=r, column=0, columnspan=4, sticky="w")
-        r += 1
-        ttk.Separator(pc).grid(row=r, column=0, columnspan=4, sticky="we", pady=6)
-        r += 1
-        ttk.Label(pc, text="間隔").grid(row=r, column=0, sticky="e")
-        self.viv = tk.StringVar(value=str(self.s["interval"]))
-        ttk.Entry(pc, textvariable=self.viv, width=7).grid(row=r, column=1, sticky="w")
-        self.vun = tk.StringVar(value=self.s["unit"])
-        ttk.Combobox(pc, textvariable=self.vun, values=list(UNIT_SEC), width=4, state="readonly").grid(row=r, column=2, sticky="w")
-        ttk.Button(pc, text="📊 依產量算", command=self.calc_interval).grid(row=r, column=3, sticky="w")
-        r += 1
-        ttk.Label(pc, text="隨機誤差 ± 秒").grid(row=r, column=0, columnspan=2, sticky="e")
-        self.vjit = tk.StringVar(value=str(self.s["jitter"]))
-        ttk.Entry(pc, textvariable=self.vjit, width=7).grid(row=r, column=2, sticky="w")
-        r += 1
-        ttk.Label(pc, text="次數上限 (0=無限)").grid(row=r, column=0, columnspan=2, sticky="e")
-        self.vlim = tk.StringVar(value=str(self.s["limit"]))
-        ttk.Entry(pc, textvariable=self.vlim, width=7).grid(row=r, column=2, sticky="w")
-        r += 1
-        self.vres = tk.BooleanVar(value=self.s["restore"])
-        ttk.Checkbutton(pc, text="點完把滑鼠移回原位", variable=self.vres).grid(row=r, column=0, columnspan=4, sticky="w")
-        r += 1
-        self.vnow = tk.BooleanVar(value=self.s["click_now"])
-        ttk.Checkbutton(pc, text="按開始時立刻先點一次", variable=self.vnow).grid(row=r, column=0, columnspan=4, sticky="w")
-        r += 1
-        self.btn = tk.Button(pc, text="▶ 開始 (F9)", font=("Microsoft JhengHei UI", 12, "bold"), bg="#ffc93c",
-                             relief="flat", command=self.toggle)
-        self.btn.grid(row=r, column=0, columnspan=4, sticky="we", pady=(8, 4))
-        r += 1
-        self.status = ttk.Label(pc, text="已停止")
-        self.status.grid(row=r, column=0, columnspan=4, sticky="w")
-        r += 1
-        ttk.Button(pc, text="開啟知識領土網站", command=lambda: webbrowser.open(GAME_URL)).grid(row=r, column=0, columnspan=4, sticky="we", pady=(6, 0))
-        r += 1
-        ttk.Label(pc, text="提示：瀏覽器視窗要保持在那個位置、不要被擋住。", foreground="#666").grid(row=r, column=0, columnspan=4, sticky="w")
-        r += 1
-        ttk.Separator(pc).grid(row=r, column=0, columnspan=4, sticky="we", pady=6)
-        r += 1
-        ttk.Label(pc, text="🌙 背景模式（遊戲不用放在前台）", font=("Microsoft JhengHei UI", 10, "bold")).grid(row=r, column=0, columnspan=4, sticky="w")
-        r += 1
-        ttk.Button(pc, text="🧩 用原本的 Chrome（安裝擴充功能，不用重新登入）", command=self.install_extension).grid(
-            row=r, column=0, columnspan=4, sticky="we")
-        r += 1
-        ttk.Label(pc, foreground="#666", wraplength=380, justify="left", text=(
-            "推薦。裝一次擴充功能後，在你平常的 Chrome 打開知識領土就會自動出現面板；分頁放背景、被蓋住都會繼續跑，"
-            "Chrome 也不會把遊戲分頁卸載。")).grid(row=r, column=0, columnspan=4, sticky="w")
-        r += 1
-        self.bgbtn = ttk.Button(pc, text="開啟專用背景視窗（要另外登入）", command=self.toggle_bg)
-        self.bgbtn.grid(row=r, column=0, columnspan=4, sticky="we", pady=(6, 0))
-        r += 1
-        self.bglbl = ttk.Label(pc, text="未開啟", foreground="#2a6db0", wraplength=380)
-        self.bglbl.grid(row=r, column=0, columnspan=4, sticky="w")
-        r += 1
-        ttk.Label(pc, foreground="#666", wraplength=380, justify="left", text=(
-            "另一種方式：開一個專用的 Chrome／Edge 視窗（完全不受背景節流），第一次要在裡面用 Discord 登入；"
-            "期間電腦不會自動睡眠。")).grid(row=r, column=0, columnspan=4, sticky="w")
-        r += 1
-        ttk.Separator(pc).grid(row=r, column=0, columnspan=4, sticky="we", pady=6)
-        r += 1
-        vr = ttk.Frame(pc)
-        vr.grid(row=r, column=0, columnspan=4, sticky="we")
-        ttk.Label(vr, text=f"版本 v{APP_VERSION}").pack(side="left")
-        ttk.Button(vr, text="檢查更新", command=lambda: self.check_update(manual=True)).pack(side="left", padx=6)
-        self.vauto_up = tk.BooleanVar(value=self.s.get("auto_update", True))
-        ttk.Checkbutton(vr, text="開啟時自動檢查", variable=self.vauto_up,
-                        command=lambda: (self.s.__setitem__("auto_update", self.vauto_up.get()), save_settings(self.s))).pack(side="left")
+        lbl(r, "X").pack(side="left")
+        ttk.Entry(r, textvariable=self.vx, width=8).pack(side="left", padx=(6, 16))
+        lbl(r, "Y").pack(side="left")
+        ttk.Entry(r, textvariable=self.vy, width=8).pack(side="left", padx=6)
+        r = row(c, 6)
+        ttk.Button(r, text="🎯 在螢幕上選位置", style="Accent.TButton", command=self.pick).pack(side="left", fill="x", expand=True)
+        ttk.Button(r, text="測試點一下", command=self.test_click).pack(side="left", fill="x", expand=True, padx=(8, 0))
+        lbl(c, "或把滑鼠移到「收成」按鈕上按 F8 記錄", "Muted.TLabel").pack(anchor="w")
 
-        ttk.Label(ph, text="手機和電腦連同一個 Wi-Fi，用手機相機掃描：", font=("Microsoft JhengHei UI", 10, "bold")).pack(anchor="w")
-        self.qr = tk.Canvas(ph, width=220, height=220, bg="white", highlightthickness=0)
-        self.qr.pack(pady=6)
-        self.url_lbl = ttk.Entry(ph, width=44)
-        self.url_lbl.pack(fill="x")
-        ttk.Label(ph, justify="left", foreground="#444", text=(
-            "手機頁面提供兩種用法：\n"
-            "① 書籤／使用者腳本：在手機瀏覽器的遊戲頁上直接自動\n"
-            "   點「收成」，可設間隔、可選自動找按鈕或自訂位置。\n"
-            "② 遙控：用手機開始／停止電腦這邊的連點。\n"
-            "iPhone 也能用：掃描後照頁面裡的「iPhone 教學」設定。\n"
-            "第一次啟動時 Windows 防火牆若跳出詢問，請按「允許」。")).pack(anchor="w", pady=6)
-        ttk.Button(ph, text="📁 匯出手機用檔案（腳本、書籤、說明）", command=self.export).pack(fill="x")
-        ttk.Button(ph, text="在電腦瀏覽器開啟手機頁", command=lambda: webbrowser.open(self.url)).pack(fill="x", pady=4)
+        # ---- 間隔 ----
+        c = card(pc, "⏱ 間隔與選項")
+        r = row(c)
+        lbl(r, "每").pack(side="left")
+        self.viv = tk.StringVar(value=str(self.s["interval"]))
+        ttk.Entry(r, textvariable=self.viv, width=8).pack(side="left", padx=6)
+        self.vun = tk.StringVar(value=self.s["unit"])
+        ttk.Combobox(r, textvariable=self.vun, values=list(UNIT_SEC), width=4, state="readonly").pack(side="left")
+        lbl(r, "點一次").pack(side="left", padx=6)
+        ttk.Button(r, text="📊 依產量算", command=self.calc_interval).pack(side="right")
+        r = row(c)
+        lbl(r, "隨機誤差 ±").pack(side="left")
+        self.vjit = tk.StringVar(value=str(self.s["jitter"]))
+        ttk.Entry(r, textvariable=self.vjit, width=6).pack(side="left", padx=6)
+        lbl(r, "秒").pack(side="left")
+        lbl(r, "次數上限").pack(side="left", padx=(20, 0))
+        self.vlim = tk.StringVar(value=str(self.s["limit"]))
+        ttk.Entry(r, textvariable=self.vlim, width=6).pack(side="left", padx=6)
+        lbl(r, "（0＝無限）", "Muted.TLabel").pack(side="left")
+        self.vres = tk.BooleanVar(value=self.s["restore"])
+        ttk.Checkbutton(c, text="點完把滑鼠移回原位", variable=self.vres).pack(anchor="w", pady=(4, 0))
+        self.vnow = tk.BooleanVar(value=self.s["click_now"])
+        ttk.Checkbutton(c, text="按開始時立刻先點一次", variable=self.vnow).pack(anchor="w")
+
+        # ---- 開始 ----
+        c = card(pc, "▶ 自動收成")
+        self.btn = HoverButton(c, "▶  開始自動收成  (F9)", self.toggle, P["accent"], P["accent_h"])
+        self.btn.pack(fill="x")
+        self.status = lbl(c, "已停止", "Info.TLabel")
+        self.status.pack(anchor="w", pady=(8, 0))
+        lbl(c, "提示：這個模式會移動真的滑鼠，遊戲畫面要停在原位、不要被擋住。", "Muted.TLabel",
+            wraplength=WRAP(), justify="left").pack(anchor="w")
+        ttk.Button(c, text="🌐 開啟知識領土網站", command=lambda: webbrowser.open(GAME_URL)).pack(fill="x", pady=(8, 0))
+
+        # ---- 背景模式 ----
+        c = card(pc, "🌙 背景模式", "遊戲不用放在前台：用面板直接點網頁上的按鈕，分頁放背景、被蓋住都會繼續跑。")
+        ttk.Button(c, text="🧩 用原本的 Chrome（安裝擴充功能，不用重新登入）", style="Accent.TButton",
+                   command=self.install_extension).pack(fill="x")
+        lbl(c, "推薦。只要裝一次，之後在平常的 Chrome 打開知識領土就會自動出現面板，Chrome 也不會把遊戲分頁卸載。",
+            "Muted.TLabel", wraplength=WRAP(), justify="left").pack(anchor="w", pady=(4, 8))
+        self.bgbtn = ttk.Button(c, text="開啟專用背景視窗（要另外登入）", command=self.toggle_bg)
+        self.bgbtn.pack(fill="x")
+        self.bglbl = lbl(c, "未開啟", "Muted.TLabel", wraplength=WRAP())
+        self.bglbl.pack(anchor="w", pady=(4, 0))
+
+        # ---- 版本 ----
+        c = card(pc, "🔄 版本與更新")
+        r = row(c)
+        lbl(r, f"目前版本 v{APP_VERSION}", "Bold.TLabel").pack(side="left")
+        ttk.Button(r, text="檢查更新", command=lambda: self.check_update(manual=True)).pack(side="right")
+        self.vauto_up = tk.BooleanVar(value=self.s.get("auto_update", True))
+        ttk.Checkbutton(c, text="開啟時自動檢查更新", variable=self.vauto_up,
+                        command=lambda: (self.s.__setitem__("auto_update", self.vauto_up.get()), save_settings(self.s))).pack(anchor="w")
+
+        # ---- 手機分頁 ----
+        c = card(ph, "📱 用手機掃描", "手機和電腦連同一個 Wi-Fi，用手機相機掃描下面的 QR Code。")
+        qbox = tk.Frame(c, bg="#FFFFFF", highlightbackground=P["line"], highlightthickness=1, padx=8, pady=8)
+        qbox.pack(pady=6)
+        self.qr = tk.Canvas(qbox, width=220, height=220, bg="white", highlightthickness=0)
+        self.qr.pack()
+        self.url_lbl = ttk.Entry(c, width=44)
+        self.url_lbl.pack(fill="x", pady=(4, 0))
+        c = card(ph, "📖 手機頁面能做什麼")
+        for t in ("• 書籤／使用者腳本：在手機瀏覽器的遊戲頁上自動點「收成」，可設間隔、自動找按鈕或自訂位置。",
+                  "• 遙控：用手機開始／停止電腦這邊的連點、改間隔。",
+                  "• iPhone 也能用：掃描後照頁面裡的「iPhone 教學」設定。",
+                  "第一次啟動時 Windows 防火牆若跳出詢問，請按「允許」。"):
+            lbl(c, t, wraplength=WRAP(), justify="left").pack(anchor="w", pady=2)
+        c = card(ph, "📁 檔案")
+        ttk.Button(c, text="📁 匯出手機用檔案（腳本、書籤、說明）", command=self.export).pack(fill="x")
+        ttk.Button(c, text="在電腦瀏覽器開啟手機頁", command=lambda: webbrowser.open(self.url)).pack(fill="x", pady=(6, 0))
 
     def draw_qr(self, text):
         self.qr.delete("all")
@@ -1302,111 +1448,108 @@ class App:
 
     # ----- 自動購買分頁 -----
     def build_buy_tab(self, f):
-        f.columnconfigure(1, weight=1)
-        head = ttk.Frame(f)
-        head.grid(row=0, column=0, columnspan=4, sticky="we")
-        ttk.Label(head, text="自動購買（照順序模擬點擊）", font=("Microsoft JhengHei UI", 10, "bold")).pack(side="left")
-        self.saved_lbl = ttk.Label(head, text="", foreground="#2a8a2a")
-        self.saved_lbl.pack(side="right")
-        sr = ttk.Frame(f)
-        sr.grid(row=1, column=0, columnspan=4, sticky="we", pady=(2, 0))
-        ttk.Label(sr, text="存檔").pack(side="left")
+        P = PAL
+        # ---- 存檔 ----
+        c = card(f, "💾 存檔", "步驟有任何變動都會自動存到目前的存檔。")
+        r = row(c)
         self.vslot = tk.StringVar()
-        self.slot_cb = ttk.Combobox(sr, textvariable=self.vslot, state="readonly", width=12)
-        self.slot_cb.pack(side="left", padx=4)
+        self.slot_cb = ttk.Combobox(r, textvariable=self.vslot, state="readonly", width=16)
+        self.slot_cb.pack(side="left")
         self.slot_cb.bind("<<ComboboxSelected>>", lambda e: self.switch_slot(self.slot_cb.current()))
-        ttk.Button(sr, text="改名", width=5, command=self.rename_slot).pack(side="left")
-        ttk.Button(sr, text="清空", width=5, command=self.clear_slot).pack(side="left", padx=2)
+        ttk.Button(r, text="改名", command=self.rename_slot).pack(side="left", padx=(8, 0))
+        ttk.Button(r, text="清空", command=self.clear_slot).pack(side="left", padx=(6, 0))
         self.vrot = tk.BooleanVar(value=self.s.get("buy_rotate", False))
-        ttk.Checkbutton(sr, text="自動輪播（做完一個存檔接下一個）", variable=self.vrot,
-                        command=self.set_rotate).pack(side="left", padx=(6, 0))
+        ttk.Checkbutton(c, text="自動輪播（做完一個存檔接下一個）", variable=self.vrot, command=self.set_rotate).pack(anchor="w", pady=(4, 0))
+        self.saved_lbl = lbl(c, "", "Ok.TLabel")
+        self.saved_lbl.pack(anchor="w")
 
+        # ---- 步驟 ----
+        c = card(f, "📋 購買步驟", "照順序模擬點擊：打開物品 → 商店 → 分類 → 購買 → 關閉商店。")
         cols = ("n", "name", "act", "x", "y", "times", "wait")
-        tv = ttk.Treeview(f, columns=cols, show="headings", height=6, selectmode="browse")
-        for c, t, w in zip(cols, ("#", "步驟", "動作", "X", "Y", "次數", "等待秒"), (28, 160, 70, 50, 50, 40, 50)):
-            tv.heading(c, text=t)
-            tv.column(c, width=w, anchor="w" if c == "name" else "center", stretch=(c == "name"))
-        tv.grid(row=2, column=0, columnspan=4, sticky="nsew", pady=(4, 4))
+        tv = ttk.Treeview(c, columns=cols, show="headings", height=6, selectmode="browse")
+        for col, t, w in zip(cols, ("#", "步驟", "動作", "X", "Y", "次數", "等待秒"), (30, 150, 76, 50, 50, 42, 54)):
+            tv.heading(col, text=t)
+            tv.column(col, width=int(w * UI_K), anchor="w" if col == "name" else "center", stretch=(col == "name"))
+        tv.pack(fill="x")
         tv.bind("<<TreeviewSelect>>", lambda e: self.load_step())
         self.tv = tv
 
-        ed = ttk.Frame(f)
-        ed.grid(row=3, column=0, columnspan=4, sticky="we")
+        ed = tk.Frame(c, bg=P["soft"], padx=10, pady=8)
+        ed.pack(fill="x", pady=(8, 0))
         self.st_name = tk.StringVar()
         self.st_times = tk.StringVar(value="1")
         self.st_wait = tk.StringVar(value="1")
         self.st_type = tk.StringVar(value="點擊")
         self.st_dir = tk.StringVar(value="往下")
         self.st_amount = tk.StringVar(value="3")
-        ttk.Label(ed, text="名稱").pack(side="left")
-        e1 = ttk.Entry(ed, textvariable=self.st_name, width=14)
-        e1.pack(side="left", padx=(2, 6))
-        ttk.Label(ed, text="重複").pack(side="left")
-        e2 = ttk.Entry(ed, textvariable=self.st_times, width=3)
-        e2.pack(side="left")
-        ttk.Label(ed, text="次 做完等").pack(side="left")
-        e3 = ttk.Entry(ed, textvariable=self.st_wait, width=4)
-        e3.pack(side="left")
-        ttk.Label(ed, text="秒").pack(side="left")
-        ed2 = ttk.Frame(f)
-        ed2.grid(row=4, column=0, columnspan=4, sticky="we", pady=(2, 0))
-        ttk.Label(ed2, text="動作").pack(side="left")
-        c1 = ttk.Combobox(ed2, textvariable=self.st_type, values=("點擊", "滾動"), state="readonly", width=5)
-        c1.pack(side="left", padx=(2, 6))
-        ttk.Label(ed2, text="滾動方向").pack(side="left")
-        c2 = ttk.Combobox(ed2, textvariable=self.st_dir, values=("往下", "往上"), state="readonly", width=5)
-        c2.pack(side="left", padx=2)
-        e4 = ttk.Entry(ed2, textvariable=self.st_amount, width=3)
+
+        def L(parent, text):
+            return tk.Label(parent, text=text, bg=P["soft"], fg=P["ink"], font=(FONT, 10))
+
+        r1 = tk.Frame(ed, bg=P["soft"])
+        r1.pack(fill="x")
+        L(r1, "選中的步驟：名稱").pack(side="left")
+        e1 = ttk.Entry(r1, textvariable=self.st_name, width=14)
+        e1.pack(side="left", padx=(4, 8))
+        L(r1, "重複").pack(side="left")
+        e2 = ttk.Entry(r1, textvariable=self.st_times, width=3)
+        e2.pack(side="left", padx=4)
+        L(r1, "次，做完等").pack(side="left")
+        e3 = ttk.Entry(r1, textvariable=self.st_wait, width=4)
+        e3.pack(side="left", padx=4)
+        L(r1, "秒").pack(side="left")
+        r2 = tk.Frame(ed, bg=P["soft"])
+        r2.pack(fill="x", pady=(6, 0))
+        L(r2, "動作").pack(side="left")
+        c1 = ttk.Combobox(r2, textvariable=self.st_type, values=("點擊", "滾動"), state="readonly", width=5)
+        c1.pack(side="left", padx=(4, 10))
+        L(r2, "滾動").pack(side="left")
+        c2 = ttk.Combobox(r2, textvariable=self.st_dir, values=("往下", "往上"), state="readonly", width=5)
+        c2.pack(side="left", padx=4)
+        e4 = ttk.Entry(r2, textvariable=self.st_amount, width=3)
         e4.pack(side="left")
-        ttk.Label(ed2, text="格").pack(side="left")
-        ttk.Button(ed2, text="套用", width=5, command=self.apply_step).pack(side="left", padx=6)
+        L(r2, "格").pack(side="left", padx=(4, 0))
+        ttk.Button(r2, text="套用", command=self.apply_step).pack(side="right")
         for w in (e1, e2, e3, e4):  # 改完自動套用＋自動存檔
             w.bind("<Return>", lambda e: self.apply_step())
             w.bind("<FocusOut>", lambda e: self.apply_step(quiet=True))
         for w in (c1, c2):
             w.bind("<<ComboboxSelected>>", lambda e: self.apply_step())
 
-        b1 = ttk.Frame(f)
-        b1.grid(row=5, column=0, columnspan=4, sticky="we", pady=(4, 0))
+        b1 = row(c, (8, 2))
         for i, (t, cmd) in enumerate((("📋 建立購買範本", self.buy_template), ("➕ 點擊步驟", self.add_step),
                                       ("➕ 滾動步驟", self.add_scroll), ("🗑 刪除", self.del_step))):
-            ttk.Button(b1, text=t, command=cmd).grid(row=0, column=i, sticky="we", padx=1)
+            ttk.Button(b1, text=t, command=cmd, style="Accent.TButton" if i == 0 else "TButton").grid(row=0, column=i, sticky="we", padx=2)
             b1.columnconfigure(i, weight=1)
-        b2 = ttk.Frame(f)
-        b2.grid(row=6, column=0, columnspan=4, sticky="we")
+        b2 = row(c, 2)
         for i, (t, cmd) in enumerate((("🎯 選位置", self.pick_step), ("🎯 依序選全部", self.pick_all),
-                                      ("↑", lambda: self.move_step(-1)), ("↓", lambda: self.move_step(1)))):
-            ttk.Button(b2, text=t, command=cmd).grid(row=0, column=i, sticky="we", padx=1)
-            b2.columnconfigure(i, weight=1 if i < 2 else 0)
-        ttk.Label(f, text="選中步驟後，把滑鼠移到目標上按 F8 也能記錄位置；滾動步驟的位置＝要捲的清單上",
-                  foreground="#666", wraplength=420).grid(row=7, column=0, columnspan=4, sticky="w")
+                                      ("↑ 上移", lambda: self.move_step(-1)), ("↓ 下移", lambda: self.move_step(1)))):
+            ttk.Button(b2, text=t, command=cmd).grid(row=0, column=i, sticky="we", padx=2)
+            b2.columnconfigure(i, weight=1)
+        lbl(c, "選中步驟後，把滑鼠移到目標上按 F8 也能記錄位置；滾動步驟的位置＝要捲的清單上。", "Muted.TLabel",
+            wraplength=WRAP(), justify="left").pack(anchor="w", pady=(6, 0))
 
-        ttk.Separator(f).grid(row=8, column=0, columnspan=4, sticky="we", pady=6)
+        # ---- 執行 ----
+        c = card(f, "⏰ 什麼時候買")
         self.vbmode = tk.StringVar(value=self.s.get("buy_mode", "restock"))
         self.vboff = tk.StringVar(value=str(self.s.get("buy_offset", 10)))
         self.vbevery = tk.StringVar(value=str(self.s.get("buy_every", 30)))
-        r1 = ttk.Frame(f)
-        r1.grid(row=9, column=0, columnspan=4, sticky="w")
-        ttk.Radiobutton(r1, text="每次補貨後（整點、半點）過", variable=self.vbmode, value="restock").pack(side="left")
-        ttk.Entry(r1, textvariable=self.vboff, width=4).pack(side="left")
-        ttk.Label(r1, text="秒").pack(side="left")
-        r2 = ttk.Frame(f)
-        r2.grid(row=10, column=0, columnspan=4, sticky="w")
-        ttk.Radiobutton(r2, text="每", variable=self.vbmode, value="interval").pack(side="left")
-        ttk.Entry(r2, textvariable=self.vbevery, width=5).pack(side="left")
-        ttk.Label(r2, text="分鐘").pack(side="left")
+        r = row(c)
+        ttk.Radiobutton(r, text="每次補貨後（整點、半點）過", variable=self.vbmode, value="restock").pack(side="left")
+        ttk.Entry(r, textvariable=self.vboff, width=5).pack(side="left", padx=4)
+        lbl(r, "秒").pack(side="left")
+        r = row(c)
+        ttk.Radiobutton(r, text="每", variable=self.vbmode, value="interval").pack(side="left")
+        ttk.Entry(r, textvariable=self.vbevery, width=6).pack(side="left", padx=4)
+        lbl(r, "分鐘").pack(side="left")
         self.vbnow = tk.BooleanVar(value=self.s.get("buy_now", True))
-        ttk.Checkbutton(f, text="按開始時立刻先買一次", variable=self.vbnow).grid(row=11, column=0, columnspan=4, sticky="w")
-        self.bbtn = tk.Button(f, text="▶ 開始自動購買 (F10)", font=("Microsoft JhengHei UI", 12, "bold"), bg="#8fd3ff",
-                              relief="flat", command=self.toggle_buy)
-        self.bbtn.grid(row=12, column=0, columnspan=4, sticky="we", pady=(8, 2))
-        ttk.Button(f, text="立即買一次（測試）", command=self.buy_once).grid(row=13, column=0, columnspan=4, sticky="we")
-        self.bstatus = ttk.Label(f, text="已停止", wraplength=420)
-        self.bstatus.grid(row=14, column=0, columnspan=4, sticky="w", pady=(4, 0))
-        ttk.Label(f, foreground="#666", wraplength=420, justify="left", text=(
-            "用法：按「建立購買範本」→ 先在瀏覽器打開商店確認位置，再按「依序選全部」把每一步點在對應按鈕上。"
-            "商品在下面看不到時，在「購買」前加一個「滾動步驟」。開始前「物品」視窗要先關著，遊戲畫面不要被擋住。"
-            "步驟會自動存到目前的存檔。")).grid(row=15, column=0, columnspan=4, sticky="w", pady=(4, 0))
+        ttk.Checkbutton(c, text="按開始時立刻先買一次", variable=self.vbnow).pack(anchor="w", pady=(2, 8))
+        self.bbtn = HoverButton(c, "▶  開始自動購買  (F10)", self.toggle_buy, P["sky"], P["sky_h"])
+        self.bbtn.pack(fill="x")
+        ttk.Button(c, text="立即買一次（測試）", command=self.buy_once).pack(fill="x", pady=(8, 0))
+        self.bstatus = lbl(c, "已停止", "Info.TLabel", wraplength=WRAP())
+        self.bstatus.pack(anchor="w", pady=(8, 0))
+        lbl(c, "開始前「物品」視窗要先關著，遊戲畫面不要被擋住。", "Muted.TLabel").pack(anchor="w")
         self.refresh_slots()
         self.refresh_steps()
 
@@ -1605,9 +1748,11 @@ class App:
 
     def refresh_buy(self):
         if self.buyer.running:
-            self.bbtn.config(text="■ 停止自動購買 (F10)", bg="#ff6b6b")
+            self.bbtn.config(text="■  停止自動購買  (F10)")
+            self.bbtn.set_colors(PAL["red"], PAL["red_h"])
         else:
-            self.bbtn.config(text="▶ 開始自動購買 (F10)", bg="#8fd3ff")
+            self.bbtn.config(text="▶  開始自動購買  (F10)")
+            self.bbtn.set_colors(PAL["sky"], PAL["sky_h"])
 
     def export(self):
         d = filedialog.askdirectory(title="選擇匯出資料夾", initialdir=app_dir())
@@ -1644,14 +1789,19 @@ class App:
 
     def refresh_btn(self):
         if self.clicker.running:
-            self.btn.config(text="■ 停止 (F9)", bg="#ff6b6b")
+            self.btn.config(text="■  停止自動收成  (F9)")
+            self.btn.set_colors(PAL["red"], PAL["red_h"])
         else:
-            self.btn.config(text="▶ 開始 (F9)", bg="#ffc93c")
+            self.btn.config(text="▶  開始自動收成  (F9)")
+            self.btn.set_colors(PAL["accent"], PAL["accent_h"])
 
     def poll(self):
         st = self.clicker.status()
         self.status.config(text=(f"執行中 · 下次 {st['next_in']} 秒" if st["running"] else "已停止") + f" · 已點 {st['count']} 次")
         self.bstatus.config(text=self.buyer.status())
+        for chip, name, on in ((self.chip_h, "收成", st["running"]), (self.chip_b, "購買", self.buyer.running)):
+            chip.config(text=f"{name} ● {'執行中' if on else '停止'}", bg="#1F5134" if on else "#2D3346",
+                        fg="#7CF0A6" if on else "#C9CEDC")
         self.bglbl.config(text=self.bg.state if self.bg.running() or self.bg.state != "啟動中…" else "未開啟")
         self.bgbtn.config(text="關閉專用背景視窗" if self.bg.running() else "開啟專用背景視窗（要另外登入）")
         on_buy_tab = self.nb.select() == str(self.buy_tab)

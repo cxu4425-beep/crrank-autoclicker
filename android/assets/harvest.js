@@ -1,12 +1,17 @@
 (function(){
-if(window.__crac){window.__crac.show();return;}
+if(window.__crac){if(!window.__cracAuto)window.__crac.show();window.__cracAuto=0;return;}
+window.__cracAuto=0;
 var K='crac_cfg',c={iv:60,mode:'auto',x:50,y:50,px:10,py:90};
 try{var o=JSON.parse(localStorage.getItem(K)||'{}');for(var k in o)c[k]=o[k];}catch(e){}
 function save(){try{localStorage.setItem(K,JSON.stringify(c));}catch(e){}}
 var t=null,tick=null,n=0,next=0,last='';
 var p=document.createElement('div');
 p.style.cssText='position:fixed;z-index:2147483647;background:#1e2230;color:#fff;font:14px sans-serif;padding:10px;border-radius:12px;box-shadow:0 4px 18px rgba(0,0,0,.45);width:220px;max-height:85vh;overflow:auto;touch-action:none;line-height:1.7';
-p.innerHTML='<div data-h style="font-weight:bold;cursor:move;user-select:none">&#9776; 自動收成 <span style="font-weight:normal;font-size:11px;opacity:.6">v1.6</span><span data-x style="float:right;cursor:pointer;padding:0 4px">&#10005;</span></div>'+
+p.innerHTML='<div data-h style="font-weight:bold;cursor:move;user-select:none;display:flex;align-items:center;gap:4px;min-height:34px">'+
+'<span style="flex:1;white-space:nowrap">&#9776; 自動收成 <span data-ms style="font-size:12px"></span> <span data-vl style="font-weight:normal;font-size:11px;opacity:.6">v1.8</span></span>'+
+'<span data-hb data-mn title="收起（繼續執行）" style="cursor:pointer;font-size:18px;line-height:1;padding:10px 14px;border-radius:8px;background:#2d3346">&#8211;</span>'+
+'<span data-hb data-x title="關閉（停止全部）" style="cursor:pointer;font-size:18px;line-height:1;padding:10px 14px;border-radius:8px;background:#3a2d36">&#10005;</span></div>'+
+'<div data-body>'+
 '<label>間隔(秒) <input data-iv type="number" min="1" style="width:80px;font-size:14px"></label><br>'+
 '<label title="從資源列讀每小時產量，在金幣或建材快滿（90%）之前才收"><input type="checkbox" data-sm> 聰明間隔（快滿前才收）</label><br>'+
 '<label><input type="radio" name="cracm" value="auto"> 自動找「收成」按鈕</label><br>'+
@@ -26,7 +31,7 @@ p.innerHTML='<div data-h style="font-weight:bold;cursor:move;user-select:none">&
 '<label><input type="checkbox" data-en> 能量快滿時提醒</label> 達 <input data-enp type="number" min="10" max="100" style="width:46px;font-size:14px">%<br>'+
 'Discord Webhook（選填）<input data-wh placeholder="https://discord.com/api/webhooks/…" style="width:100%;font-size:12px;box-sizing:border-box">'+
 '<button data-nt style="font-size:13px;margin-top:4px">測試通知</button>'+
-'<div data-xs style="font-size:12px;opacity:.85;margin-top:4px"></div></div></div>';
+'<div data-xs style="font-size:12px;opacity:.85;margin-top:4px"></div></div></div></div>';
 document.body.appendChild(p);
 var mk=document.createElement('div');
 mk.style.cssText='position:fixed;z-index:2147483646;width:22px;height:22px;margin:-11px 0 0 -11px;border:3px solid #ff3b5c;border-radius:50%;pointer-events:none;display:none';
@@ -61,14 +66,17 @@ q('data-s').textContent=(t?'執行中 · 下次 '+(s>=60?mm:s+' 秒')+(c.smart&&
 function start(){if(t)return;c.run=true;save();var g=q('data-go');g.textContent='停止';g.style.background='#ff6b6b';t=-1;arm(doClick());tick=setInterval(upd,1000);upd();}
 function stop(){c.run=false;save();clearTimeout(t);clearInterval(tick);t=null;var g=q('data-go');g.textContent='開始';g.style.background='#ffc93c';upd();}
 q('data-go').onclick=function(){t?stop():start();};
-q('data-x').onclick=function(){stop();p.style.display='none';mk.style.display='none';};
+q('data-x').onclick=function(){stop();c.closed=true;save();p.style.display='none';mk.style.display='none';};
+function setMin(v){c.min=!!v;save();q('data-body').style.display=v?'none':'';p.style.width=v?'auto':'220px';
+q('data-mn').innerHTML=v?'&#9634;':'&#8211;';q('data-mn').title=v?'展開':'收起（繼續執行）';q('data-vl').style.display=v?'none':'';}
+q('data-mn').onclick=function(){setMin(!c.min);place();};
 q('data-pk').onclick=function(){var ov=document.createElement('div');
 ov.style.cssText='position:fixed;inset:0;z-index:2147483647;background:rgba(0,0,0,.35);color:#fff;font:bold 20px sans-serif;display:flex;align-items:center;justify-content:center;text-align:center;touch-action:none';
 ov.textContent='點一下要自動點擊的位置';document.body.appendChild(ov);
 ov.addEventListener('pointerdown',function(e){e.preventDefault();e.stopPropagation();c.x=e.clientX/innerWidth*100;c.y=e.clientY/innerHeight*100;c.mode='pos';
 for(var j=0;j<rs.length;j++)rs[j].checked=rs[j].value=='pos';save();showMk();setTimeout(function(){ov.remove();},50);},{once:true});};
 var hd=q('data-h'),dx=0,dy=0,dr=false;
-hd.addEventListener('pointerdown',function(e){if(e.target.hasAttribute('data-x'))return;dr=true;dx=e.clientX-c.px;dy=e.clientY-c.py;hd.setPointerCapture(e.pointerId);});
+hd.addEventListener('pointerdown',function(e){if(e.target.closest&&e.target.closest('[data-hb]'))return;dr=true;dx=e.clientX-c.px;dy=e.clientY-c.py;hd.setPointerCapture(e.pointerId);});
 hd.addEventListener('pointermove',function(e){if(!dr)return;c.px=e.clientX-dx;c.py=e.clientY-dy;place();});
 hd.addEventListener('pointerup',function(){dr=false;save();});
 if(!c.buy)c.buy=[];if(!c.items)c.items=[];if(!c.bmode)c.bmode='restock';if(!c.bmin)c.bmin=10;
@@ -159,5 +167,11 @@ if(t&&t!==-1&&next&&now>=next+1000)arm(doClick());
 if(B.on&&!B.busy&&B.at&&now>=B.at+1000){clearTimeout(B.t);buyRun().then(bsched);}
 if(c.cl&&!X.busy&&X.at&&now>=X.at+1000){clearTimeout(X.t);claimAll().then(clSched);}
 checkEnergy();}
-window.__crac={show:function(){p.style.display='';showMk();},tick:wake};
+function mini(){var on=!!t||B.on||c.cl;q('data-ms').textContent=c.min?(on?'🟢':'⚪'):'';}
+setInterval(mini,1000);
+if(c.closed){c.closed=false;c.min=true;}  /* 關掉後重新載入：只顯示收起的小條，不擋畫面 */
+setMin(!!c.min);mini();
+window.__crac={show:function(){c.closed=false;p.style.display='';setMin(false);place();showMk();},tick:wake,
+ensureHarvest:function(){if(t)return;c.mode='auto';for(var j=0;j<rs.length;j++)rs[j].checked=rs[j].value=='auto';start();},
+stopHarvest:function(){if(t)stop();}};
 })();

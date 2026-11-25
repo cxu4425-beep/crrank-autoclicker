@@ -17,7 +17,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from tkinter import filedialog, messagebox, ttk
 
 APP_NAME = "CR Rank 自動收成器"
-APP_VERSION = "1.9"
+APP_VERSION = "2.0"
 REPO = "cxu4425-beep/crrank-autoclicker"
 GAME_URL = "https://crrank.xpgs25.com/game"
 
@@ -88,7 +88,7 @@ SETTINGS_FILE = os.path.join(app_dir(), "crrank_clicker_settings.json")
 DEFAULTS = {"x": 0, "y": 0, "interval": 60, "unit": "秒", "jitter": 0,
             "limit": 0, "restore": True, "click_now": True, "port": 8765,
             "buy_mode": "restock", "buy_every": 30, "buy_offset": 10, "buy_now": True,
-            "buy_slot": 0, "buy_rotate": False, "auto_rate": True}
+            "buy_slot": 0, "buy_rotate": False, "auto_rate": True, "remote_on": True}
 NUM_SLOTS = 3
 
 
@@ -490,7 +490,7 @@ class Clicker:
                 self.running = False
                 self.on_change()
                 return
-            self.next_at = time.time() + 5
+            self.next_at = time.time() + self.interval_sec()  # 讀遊戲畫面時先顯示原本的間隔
             self.next_at = time.time() + self._wait(after_click=True)
             if self.stop_evt.wait(max(0, self.next_at - time.time())):
                 return
@@ -759,7 +759,7 @@ def _chromium_pages():
         if exe not in BROWSER_EXES:
             return True
         t = title.value
-        pri = 0 if ("知識領土" in t or "CR Rank" in t) else (2 if user32.IsIconic(h) else 1)
+        pri = 0 if "知識領土" in t else (0.5 if "CR Rank" in t else (2 if user32.IsIconic(h) else 1))
         found.append((pri, t, h))  # 直接讀整個視窗（Chrome 會自動打開網頁的輔助功能樹）
         return True
 
@@ -822,7 +822,7 @@ def read_game_state():
         if time.time() > t_end:
             break
         try:
-            st = parse_game_texts(_acc_texts(hwnd, budget=4.0 if pri == 0 else 1.5))
+            st = parse_game_texts(_acc_texts(hwnd, budget=4.0 if pri < 1 else 1.5))
         except Exception:
             st = None
         if st:
@@ -1129,6 +1129,322 @@ def make_handler(app):
                 return self._send(200, json.dumps(app.clicker.status()), "application/json")
             self._send(404, "not found", "text/plain")
     return H
+
+
+# ---------- 🌍 遠端遙控（不用同一個 Wi-Fi）：經公共 MQTT 中繼，全程 AES-256-GCM 加密 ----------
+REMOTE_PAGE = "https://cxu4425-beep.github.io/crrank-autoclicker/remote.html"
+REMOTE_BROKERS = [("broker.emqx.io", 8883), ("test.mosquitto.org", 8886)]  # 手機頁面用對應的 wss 位址
+
+
+class MiniMQTT:
+    """最小的 MQTT 3.1.1 用戶端（TLS、QoS 0），只用來轉送加密過的資料。"""
+
+    def __init__(self, host, port, on_message, keepalive=30):
+        self.host, self.port, self.on_message, self.keepalive = host, port, on_message, keepalive
+        self.cid = "crrank-" + secrets.token_hex(6)
+        self.sock = None
+        self.lock = threading.Lock()
+        self.alive = False
+
+    @staticmethod
+    def _rl(n):
+        out = bytearray()
+        while True:
+            b, n = n % 128, n // 128
+            out.append(b | (0x80 if n else 0))
+            if not n:
+                return bytes(out)
+
+    @staticmethod
+    def _s(t):
+        b = t.encode("utf-8")
+        return len(b).to_bytes(2, "big") + b
+
+    def _pkt(self, h, body):
+        return bytes([h]) + self._rl(len(body)) + body
+
+    def _recv(self, n):
+        buf = bytearray()
+        while len(buf) < n:
+            c = self.sock.recv(n - len(buf))
+            if not c:
+                raise ConnectionError("連線中斷")
+            buf += c
+        return bytes(buf)
+
+    def _read(self):
+        h = self._recv(1)[0]
+        mul = n = 0
+        mul = 1
+        while True:
+            b = self._recv(1)[0]
+            n += (b & 127) * mul
+            mul *= 128
+            if not b & 128:
+                break
+        return h, (self._recv(n) if n else b"")
+
+    def connect(self, timeout=12):
+        import ssl
+        raw = socket.create_connection((self.host, self.port), timeout=timeout)
+        self.sock = ssl.create_default_context().wrap_socket(raw, server_hostname=self.host)
+        body = self._s("MQTT") + bytes([4, 2]) + self.keepalive.to_bytes(2, "big") + self._s(self.cid)
+        self.sock.sendall(self._pkt(0x10, body))
+        h, b = self._read()
+        if h >> 4 != 2 or len(b) < 2 or b[1] != 0:
+            raise ConnectionError("中繼伺服器拒絕連線")
+        self.sock.settimeout(self.keepalive * 2)
+        self.alive = True
+        self.last_ping = time.time()
+
+    def subscribe(self, topic):
+        self._send(self._pkt(0x82, (1).to_bytes(2, "big") + self._s(topic) + b"\x00"))
+
+    def publish(self, topic, payload):
+        self._send(self._pkt(0x30, self._s(topic) + payload))
+
+    def _send(self, data):
+        with self.lock:
+            self.sock.sendall(data)
+
+    def ping_if_due(self):
+        if time.time() - self.last_ping > self.keepalive * 0.6:
+            self.last_ping = time.time()
+            self._send(b"\xc0\x00")
+
+    def loop(self):
+        """在自己的執行緒跑：收訊息直到斷線。"""
+        try:
+            while self.alive:
+                h, b = self._read()
+                if h >> 4 == 3:
+                    tl = int.from_bytes(b[:2], "big")
+                    topic = b[2:2 + tl].decode("utf-8", "replace")
+                    off = 2 + tl + (2 if (h >> 1) & 3 else 0)
+                    self.on_message(topic, b[off:])
+        except Exception:
+            pass
+        self.alive = False
+
+    def close(self):
+        self.alive = False
+        try:
+            self._send(b"\xe0\x00")
+        except Exception:
+            pass
+        try:
+            self.sock.close()
+        except Exception:
+            pass
+
+
+def _b64u(b):
+    import base64
+    return base64.urlsafe_b64encode(b).decode().rstrip("=")
+
+
+def _unb64u(t):
+    import base64
+    return base64.urlsafe_b64decode(t + "=" * (-len(t) % 4))
+
+
+def capture_frame(s, max_w=900, quality=55):
+    """擷取遊戲視窗（找不到就整個螢幕），標出點擊位置，回傳 JPEG。"""
+    from PIL import Image, ImageDraw, ImageGrab
+    import io
+    import ctypes.wintypes as wt
+    box = None
+    try:
+        for pri, title, h in _chromium_pages():
+            if pri < 1 and not user32.IsIconic(h):
+                r = wt.RECT()
+                user32.GetWindowRect(h, ctypes.byref(r))
+                if r.right - r.left > 200 and r.bottom - r.top > 200:
+                    box = (r.left, r.top, r.right, r.bottom)
+                break
+    except Exception:
+        box = None
+    if box is None:
+        vx, vy = user32.GetSystemMetrics(76), user32.GetSystemMetrics(77)
+        box = (vx, vy, vx + user32.GetSystemMetrics(78), vy + user32.GetSystemMetrics(79))
+    img = ImageGrab.grab(box, all_screens=True).convert("RGB")
+    x, y = int(s.get("x", 0)) - box[0], int(s.get("y", 0)) - box[1]
+    if 0 <= x < img.width and 0 <= y < img.height:  # 紅圈＝自動收成會點的位置
+        d = ImageDraw.Draw(img)
+        rr = max(10, img.width // 60)
+        for k in (0, 1, 2):
+            d.ellipse((x - rr - k, y - rr - k, x + rr + k, y + rr + k), outline=(255, 60, 60))
+        d.line((x - rr * 2, y, x + rr * 2, y), fill=(255, 60, 60), width=2)
+        d.line((x, y - rr * 2, x, y + rr * 2), fill=(255, 60, 60), width=2)
+    if img.width > max_w:
+        img = img.resize((max_w, int(img.height * max_w / img.width)), Image.BILINEAR)
+    out = io.BytesIO()
+    img.save(out, "JPEG", quality=quality, optimize=True)
+    return out.getvalue()
+
+
+class RemoteLink:
+    """把電腦接到中繼伺服器：每秒送狀態、手機頁面開著時送實時畫面，收手機的指令。"""
+
+    def __init__(self, app):
+        self.app = app
+        s = app.s
+        if not s.get("remote_id") or not s.get("remote_key"):
+            self.new_keys(save=False)
+        self.state = "未啟動"
+        self.ok = False
+        self.mq = None
+        self.watch_until = 0.0
+        self.seen = {}
+        self.stop_evt = threading.Event()
+        self.kick = threading.Event()
+        self.thread = None
+
+    def new_keys(self, save=True):
+        self.app.s["remote_id"] = secrets.token_hex(10)
+        self.app.s["remote_key"] = _b64u(secrets.token_bytes(32))
+        if save:
+            save_settings(self.app.s)
+
+    def url(self):
+        s = self.app.s
+        return f"{REMOTE_PAGE}#{s['remote_id']}.{s['remote_key']}.{int(s.get('remote_broker', 0))}"
+
+    def topic(self, d):
+        return f"crrank/v1/{self.app.s['remote_id']}/{d}"
+
+    # --- 加密 ---
+    def _aes(self):
+        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+        return AESGCM(_unb64u(self.app.s["remote_key"]))
+
+    def seal(self, kind, data, d="up"):
+        n = secrets.token_bytes(12)
+        return n + self._aes().encrypt(n, kind + data, ("crrank-v1|" + d).encode())
+
+    def open_(self, payload, d="down"):
+        return self._aes().decrypt(payload[:12], payload[12:], ("crrank-v1|" + d).encode())
+
+    # --- 執行 ---
+    def start(self):
+        if self.thread and self.thread.is_alive():
+            return
+        self.stop_evt.clear()
+        self.thread = threading.Thread(target=self._run, daemon=True)
+        self.thread.start()
+
+    def stop(self):
+        self.stop_evt.set()
+        self.kick.set()
+        if self.mq:
+            self.mq.close()
+        self.state, self.ok = "已關閉", False
+
+    def restart(self):
+        self.stop()
+        if self.thread:
+            self.thread.join(3)
+        self.start()
+
+    def _run(self):
+        wait = 3
+        while not self.stop_evt.is_set():
+            host, port = REMOTE_BROKERS[int(self.app.s.get("remote_broker", 0)) % len(REMOTE_BROKERS)]
+            self.state, self.ok = f"連線到 {host} 中…", False
+            try:
+                mq = MiniMQTT(host, port, self._on_msg)
+                mq.connect()
+                self.mq = mq
+                mq.subscribe(self.topic("down"))
+                threading.Thread(target=mq.loop, daemon=True).start()
+                self.state, self.ok = f"已連線（{host}）", True
+                wait = 3
+                self._send_loop(mq)
+            except Exception as ex:
+                self.state = f"連線失敗，{wait} 秒後重試（{ex.__class__.__name__}）"
+            self.ok = False
+            if self.mq:
+                self.mq.close()
+            self.stop_evt.wait(wait)
+            wait = min(60, wait * 2)
+
+    def _send_loop(self, mq):
+        last_status = last_frame = 0.0
+        while mq.alive and not self.stop_evt.is_set():
+            now = time.time()
+            watching = now < self.watch_until
+            if now - last_status >= (1 if watching else 20):
+                last_status = now
+                mq.publish(self.topic("up"), self.seal(b"S", json.dumps(self.status(), ensure_ascii=False).encode()))
+            if watching and now - last_frame >= 1.5:
+                last_frame = now
+                try:
+                    mq.publish(self.topic("up"), self.seal(b"F", capture_frame(self.app.s)))
+                except Exception:
+                    pass
+            mq.ping_if_due()
+            self.kick.wait(0.25)
+            self.kick.clear()
+
+    def status(self):
+        a = self.app
+        st = dict(a.clicker.status())
+        st.update(ver=APP_VERSION, auto_rate=bool(a.s.get("auto_rate")), buy=a.buyer.running,
+                  buy_text=a.buyer.status(), smart=bool(a.smart_used), ts=int(time.time() * 1000))
+        rs = a.rate_state if a.rate_ok else None
+        if rs:
+            sec = smart_wait_seconds(rs)
+            st["rate"] = describe_state(rs) + (f" → 約 {max(1, round(sec / 60))} 分鐘後快滿" if sec else "")
+        else:
+            st["rate"] = "還沒讀到遊戲" if a.s.get("auto_rate") else "自動判斷已關閉"
+        return st
+
+    def _on_msg(self, topic, payload):
+        try:
+            data = self.open_(payload)
+        except Exception:
+            return  # 不是用這把金鑰加密的 → 忽略
+        if data[:1] != b"C":
+            return
+        try:
+            c = json.loads(data[1:].decode("utf-8"))
+        except Exception:
+            return
+        now = time.time()
+        ts, nonce = c.get("ts", 0) / 1000.0, str(c.get("n", ""))
+        if abs(now - ts) > 300 or not nonce or nonce in self.seen:  # 擋掉重播的舊指令
+            return
+        self.seen = {k: v for k, v in self.seen.items() if now - v < 600}
+        self.seen[nonce] = now
+        self.handle(c)
+        self.kick.set()
+
+    def handle(self, c):
+        a, cmd = self.app, c.get("cmd")
+        if cmd == "watch":
+            self.watch_until = time.time() + 20
+        elif cmd == "start":
+            a.root.after(0, a.start)
+        elif cmd == "stop":
+            a.root.after(0, a.stop)
+        elif cmd == "once":
+            threading.Thread(target=a.clicker.once, daemon=True).start()
+        elif cmd == "set":
+            try:
+                v = float(c.get("interval"))
+                if v > 0:
+                    a.root.after(0, lambda: a.set_interval(v, c.get("unit", "秒")))
+            except (TypeError, ValueError):
+                pass
+        elif cmd == "auto_rate":
+            def f():
+                a.vauto_rate.set(bool(c.get("on")))
+                a.set_auto_rate()
+            a.root.after(0, f)
+        elif cmd == "read":
+            threading.Thread(target=a.read_rates, daemon=True).start()
+        elif cmd == "buy":
+            a.root.after(0, a.toggle_buy)
 
 
 # ---------- 介面外觀 ----------
@@ -1471,6 +1787,11 @@ class App:
         t = self.s.get("tab", 0)
         self.show_tab(t if t in (0, 1, 2) else 0)
         self.start_server()
+        self.remote = RemoteLink(self)
+        save_settings(self.s)
+        self.draw_remote_qr()
+        if self.s.get("remote_on", True):
+            self.remote.start()
         self.root.protocol("WM_DELETE_WINDOW", self.quit)
         self.root.after(200, self.poll)
         self._keys = {VK_F8: False, VK_F9: False, VK_F10: False}
@@ -1738,23 +2059,71 @@ class App:
         ttk.Checkbutton(c, text="開啟時自動檢查更新", variable=self.vauto_up,
                         command=lambda: (self.s.__setitem__("auto_update", self.vauto_up.get()), save_settings(self.s))).pack(anchor="w")
 
-        # ---- 手機分頁 ----
-        c = card(ph, "📱 用手機掃描", "手機和電腦連同一個 Wi-Fi，用手機相機掃描下面的 QR Code。")
+        # ---- 手機分頁：遠端遙控（任何網路） ----
+        c = card(ph, "🌍 遠端遙控（不用同一個 Wi-Fi）",
+                 "用手機相機掃描，4G／5G或別的Wi-Fi都能遙控，還看得到電腦的實時畫面（紅圈＝會點的位置）。")
         qbox = tk.Frame(c, bg="#FFFFFF", highlightbackground=P["line"], highlightthickness=1, padx=8, pady=8)
         qbox.pack(pady=6)  # QR Code 保持方形白底，手機比較好掃
+        self.rqr = tk.Canvas(qbox, width=240, height=240, bg="white", highlightthickness=0)
+        self.rqr.pack()
+        self.vremote = tk.BooleanVar(value=self.s.get("remote_on", True))
+        r = row(c)
+        ttk.Checkbutton(r, text="允許遠端遙控", variable=self.vremote, command=self.set_remote).pack(side="left")
+        RoundBtn(r, text="🔄 換新連結", command=self.renew_remote).pack(side="right")
+        RoundBtn(r, text="🔗 複製連結", command=self.copy_remote).pack(side="right", padx=(0, 6))
+        self.remote_lbl = lbl(c, "", "Info.TLabel", wraplength=WRAP())
+        self.remote_lbl.pack(anchor="w", pady=(4, 0))
+        lbl(c, "🔒指令和畫面經公共中繼伺服器（broker.emqx.io）轉送，但全部用只存在這個QR Code裡的金鑰加密"
+               "（AES-256），伺服器看不到內容。畫面只在手機頁面開著時才傳。連結外流的話按「換新連結」，舊的就失效。",
+            "Muted.TLabel", wraplength=WRAP(), justify="left").pack(anchor="w", pady=(4, 0))
+
+        # ---- 手機分頁：同一個 Wi-Fi（書籤、使用者腳本、區網遙控） ----
+        c = card(ph, "📶 同一個 Wi-Fi：書籤／使用者腳本", "手機和電腦連同一個 Wi-Fi，掃描後照頁面說明在手機瀏覽器裝自動收成面板。")
+        qbox = tk.Frame(c, bg="#FFFFFF", highlightbackground=P["line"], highlightthickness=1, padx=8, pady=8)
+        qbox.pack(pady=6)
         self.qr = tk.Canvas(qbox, width=220, height=220, bg="white", highlightthickness=0)
         self.qr.pack()
         self.url_lbl = ttk.Entry(c, width=44)
         self.url_lbl.pack(fill="x", pady=(4, 0))
         c = card(ph, "📖 手機頁面能做什麼")
         for t in ("•書籤／使用者腳本：在手機瀏覽器的遊戲頁上自動點「收成」，可設間隔、自動找按鈕或自訂位置。",
-                  "•遙控：用手機開始／停止電腦這邊的連點、改間隔。",
+                  "•遙控：用手機開始／停止電腦這邊的連點、改間隔（不同網路請用上面的遠端遙控）。",
                   "•iPhone 也能用：掃描後照頁面裡的「iPhone 教學」設定。",
                   "第一次啟動時 Windows 防火牆若跳出詢問，請按「允許」。"):
             lbl(c, t, wraplength=WRAP(), justify="left").pack(anchor="w", pady=2)
         c = card(ph, "📁 檔案")
         RoundBtn(c, text="📁 匯出手機用檔案（腳本、書籤、說明）", command=self.export).pack(fill="x")
         RoundBtn(c, text="在電腦瀏覽器開啟手機頁", command=lambda: webbrowser.open(self.url)).pack(fill="x", pady=(6, 0))
+
+    # ----- 🌍 遠端遙控 -----
+    def set_remote(self):
+        self.s["remote_on"] = bool(self.vremote.get())
+        save_settings(self.s)
+        if self.s["remote_on"]:
+            self.remote.start()
+        else:
+            self.remote.stop()
+        self.draw_remote_qr()
+
+    def draw_remote_qr(self):
+        if self.s.get("remote_on", True):
+            self.draw_qr(self.remote.url(), self.rqr)
+        else:
+            self.rqr.delete("all")
+            self.rqr.create_text(120, 120, text="遠端遙控已關閉", font=(FONT, 11), fill=PAL["muted"])
+
+    def copy_remote(self):
+        self.root.clipboard_clear()
+        self.root.clipboard_append(self.remote.url())
+        messagebox.showinfo(APP_NAME, "遠端遙控連結已複製。\n這個連結等於遙控器，只傳給自己的手機。")
+
+    def renew_remote(self):
+        if not messagebox.askyesno(APP_NAME, "換新連結後，舊的 QR Code／連結就不能用了，要重新掃描。確定嗎？"):
+            return
+        self.remote.new_keys()
+        self.draw_remote_qr()
+        if self.s.get("remote_on", True):
+            self.remote.restart()
 
     # ----- 🤖 自動判斷每小時產量 -----
     def set_auto_rate(self):
@@ -1825,8 +2194,10 @@ class App:
             self.s["tab"] = k
             save_settings(self.s)
 
-    def draw_qr(self, text):
-        self.qr.delete("all")
+    def draw_qr(self, text, cv=None):
+        cv = cv or self.qr
+        W = int(cv.cget("width"))
+        cv.delete("all")
         try:
             import qrcode
             q = qrcode.QRCode(border=2, error_correction=qrcode.constants.ERROR_CORRECT_M)
@@ -1834,15 +2205,15 @@ class App:
             q.make(fit=True)
             m = q.get_matrix()
             n = len(m)
-            size = max(2, 220 // n)
-            off = (220 - size * n) // 2
+            size = max(2, W // n)
+            off = (W - size * n) // 2
             for y, row in enumerate(m):
                 for x, v in enumerate(row):
                     if v:
-                        self.qr.create_rectangle(off + x * size, off + y * size, off + (x + 1) * size,
-                                                 off + (y + 1) * size, fill="black", outline="black")
+                        cv.create_rectangle(off + x * size, off + y * size, off + (x + 1) * size,
+                                            off + (y + 1) * size, fill="black", outline="black")
         except Exception as e:
-            self.qr.create_text(110, 110, text=f"QR 失敗\n{e}")
+            cv.create_text(W // 2, W // 2, text=f"QR 失敗\n{e}")
 
     # ----- 動作 -----
     def collect(self):
@@ -2286,6 +2657,11 @@ class App:
         auto = " · 🤖 自動判斷" if (self.s.get("auto_rate") and self.smart_used) else ""
         self.status.config(text=(f"執行中 · 下次 {nxt_s}{auto}" if st["running"] else "已停止") + f" · 已點 {st['count']} 次")
         self.bstatus.config(text=self.buyer.status())
+        if hasattr(self, "remote"):
+            watching = time.time() < self.remote.watch_until
+            rt = ("● " + self.remote.state + ("　📺 手機正在看畫面" if watching else "")) if self.s.get("remote_on", True) else "已關閉"
+            if self.remote_lbl.cget("text") != rt:
+                self.remote_lbl.config(text=rt)
         for chip, name, on in ((self.chip_h, "收成", st["running"]), (self.chip_b, "購買", self.buyer.running)):
             chip.config(text=f"{name} ● {'執行中' if on else '停止'}", bg="#1F5134" if on else "#2D3346",
                         fg="#7CF0A6" if on else "#C9CEDC")
@@ -2313,6 +2689,8 @@ class App:
         self.root.after(100, self.poll)
 
     def quit(self, silent=False):
+        if hasattr(self, "remote"):
+            self.remote.stop()
         self.clicker.stop()
         self.buyer.stop()
         if not silent and self.bg.running() and messagebox.askyesno(APP_NAME, "要一起關掉背景遊戲視窗嗎？\n（選「否」視窗會留著，面板繼續跑，但重新整理後就不會自動放回面板）"):

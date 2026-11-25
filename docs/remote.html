@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex">
+<title>CR Rank 遠端遙控</title>
+<style>
+:root{--bg:#F4F1EA;--card:#fff;--ink:#1E2230;--muted:#6B7080;--line:#E4DFD3;--soft:#F1EDE3;--yel:#FFC93C;--yelh:#F2B622;--sky:#8FD3FF;--red:#FF6B6B;--head:#1E2230;--green:#2A8A4A;--blue:#2F6FDE}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 -apple-system,"PingFang TC","Microsoft JhengHei",system-ui,sans-serif;-webkit-text-size-adjust:100%}
+header{background:var(--head);color:#fff;padding:14px 16px 14px;position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:10px}
+header h1{font-size:18px;margin:0;flex:1}
+.pill{font-size:12px;font-weight:700;padding:4px 10px;border-radius:999px;background:#2D3346;color:#C9CEDC;white-space:nowrap}
+.pill.on{background:#1F5134;color:#7CF0A6}.pill.bad{background:#5A2630;color:#FFB3BD}
+main{padding:12px 14px 40px;max-width:640px;margin:0 auto}
+.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:14px 16px;margin:10px 0;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+.card h2{font-size:16px;margin:0 0 8px}
+.muted{color:var(--muted);font-size:13px}
+.screen{position:relative;border-radius:12px;overflow:hidden;background:#11131a;min-height:140px;display:flex;align-items:center;justify-content:center}
+.screen img{width:100%;display:block}
+.screen .ph{color:#A7ADBF;font-size:13px;padding:30px;text-align:center}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0}
+button{font:inherit;border:0;border-radius:14px;padding:11px 14px;background:var(--soft);color:var(--ink);cursor:pointer;min-height:44px}
+button:active{filter:brightness(.93)}
+button.big{width:100%;font-size:18px;font-weight:800;min-height:56px;background:var(--yel)}
+button.big.stop{background:var(--red)}
+button.sky{background:var(--sky);font-weight:700}
+button.grow{flex:1}
+input,select{font:inherit;border:1px solid var(--line);border-radius:10px;padding:9px 10px;background:#fff;color:var(--ink);min-height:44px}
+input[type=number]{width:90px}
+label.chk{display:flex;align-items:center;gap:8px;margin:6px 0}
+label.chk input{width:22px;height:22px;min-height:0;accent-color:#E0A800}
+.status{font-weight:700;color:var(--blue)}
+.ok{color:var(--green)}
+#toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:var(--head);color:#fff;padding:10px 16px;border-radius:999px;font-size:14px;opacity:0;transition:opacity .25s;pointer-events:none;max-width:90%}
+#toast.show{opacity:.95}
+.err{background:#FFF4D6;border-color:#F2D48A}
+</style>
+</head>
+<body>
+<header><h1>🌾 CR Rank 遠端遙控</h1><span id="conn" class="pill">連線中…</span></header>
+<main>
+  <div id="bad" class="card err" hidden><h2>⚠️ 連結不完整</h2><p>請用電腦版「📱 手機」分頁裡「🌍 遠端遙控」的 QR Code 重新掃描。</p></div>
+
+  <div class="card">
+    <h2>📺 實時畫面</h2>
+    <div class="screen" id="screen"><div class="ph" id="ph">等電腦傳畫面…<br>（電腦要開著程式，並勾選「允許遠端遙控」）</div></div>
+    <div class="row"><span class="muted grow" id="frameAge">紅圈＝自動收成會點的位置</span>
+      <button id="pause">⏸ 暫停畫面</button></div>
+  </div>
+
+  <div class="card">
+    <h2>▶ 自動收成</h2>
+    <div class="status" id="st">等電腦回應…</div>
+    <div class="muted" id="cnt"></div>
+    <div class="row"><button class="big" id="go">▶ 開始自動收成</button></div>
+    <div class="row"><button class="grow" id="once">👆 點一下</button></div>
+    <div class="row">每 <input type="number" id="iv" min="0.1" step="any" inputmode="decimal">
+      <select id="un"><option>秒</option><option>分</option><option>時</option></select>
+      點一次 <button class="sky" id="set">套用</button></div>
+    <div class="muted">開著自動判斷時，間隔只在電腦讀不到遊戲時使用。</div>
+  </div>
+
+  <div class="card">
+    <h2>🤖 自動判斷每小時產量</h2>
+    <label class="chk"><input type="checkbox" id="ar"> 自動判斷收成時間</label>
+    <div class="ok" id="rate"></div>
+    <div class="row"><button id="read">🔍 重新讀取產量</button></div>
+  </div>
+
+  <div class="card">
+    <h2>🛒 自動購買</h2>
+    <div class="status" id="bst"></div>
+    <div class="row"><button class="grow sky" id="buy">▶ 開始自動購買</button></div>
+    <div class="muted">購買步驟要先在電腦版設定好。</div>
+  </div>
+
+  <p class="muted">🔒 指令和畫面全部用 QR Code 裡的金鑰加密（AES-256），中繼伺服器看不到內容；金鑰只在網址 # 後面，不會傳到任何伺服器。連結等於遙控器，不要分享給別人。</p>
+</main>
+<div id="toast"></div>
+<script>
+(function(){
+'use strict';
+var $=function(id){return document.getElementById(id);};
+var BROKERS=['wss://broker.emqx.io:8084/mqtt','wss://test.mosquitto.org:8081/mqtt'];
+var parts=(location.hash||'').slice(1).split('.');
+if(parts.length<2||!/^[0-9a-f]{20}$/.test(parts[0])){ $('bad').hidden=false; $('conn').textContent='連結錯誤'; $('conn').className='pill bad'; return; }
+var ID=parts[0], KEYB=parts[1], BI=parseInt(parts[2]||'0',10)||0;
+var TOP_UP='crrank/v1/'+ID+'/up', TOP_DOWN='crrank/v1/'+ID+'/down';
+var te=new TextEncoder(), td=new TextDecoder();
+var key=null, mq=null, lastStatus=0, lastFrame=0, st=null, paused=false, edited=false, frameUrl=null;
+
+function toast(t){var e=$('toast');e.textContent=t;e.classList.add('show');clearTimeout(toast.t);toast.t=setTimeout(function(){e.classList.remove('show');},2200);}
+function unb64(s){s=s.replace(/-/g,'+').replace(/_/g,'/');while(s.length%4)s+='=';var b=atob(s),u=new Uint8Array(b.length);for(var i=0;i<b.length;i++)u[i]=b.charCodeAt(i);return u;}
+function cat(a,b){var u=new Uint8Array(a.length+b.length);u.set(a,0);u.set(b,a.length);return u;}
+function hex(n){var a=new Uint8Array(n);crypto.getRandomValues(a);return Array.prototype.map.call(a,function(x){return ('0'+x.toString(16)).slice(-2);}).join('');}
+
+// ---- 最小 MQTT over WebSocket ----
+function MQ(url,onMsg,onState){
+  var ws,buf=new Uint8Array(0),pingT,self=this;
+  function s(t){var b=te.encode(t);return cat(new Uint8Array([b.length>>8,b.length&255]),b);}
+  function rl(n){var o=[];do{var b=n%128;n=Math.floor(n/128);if(n)b|=128;o.push(b);}while(n);return new Uint8Array(o);}
+  function pkt(h,body){return cat(cat(new Uint8Array([h]),rl(body.length)),body);}
+  function send(u){if(ws&&ws.readyState===1)ws.send(u);}
+  self.publish=function(topic,payload){send(pkt(0x30,cat(s(topic),payload)));};
+  self.subscribe=function(topic){send(pkt(0x82,cat(cat(new Uint8Array([0,1]),s(topic)),new Uint8Array([0]))));};
+  self.close=function(){clearInterval(pingT);try{ws.close();}catch(e){}};
+  ws=new WebSocket(url,['mqtt']);ws.binaryType='arraybuffer';
+  ws.onopen=function(){
+    var body=cat(cat(s('MQTT'),new Uint8Array([4,2,0,60])),s('crrank-web-'+hex(6)));
+    send(pkt(0x10,body));
+    pingT=setInterval(function(){send(new Uint8Array([0xC0,0]));},30000);
+  };
+  ws.onmessage=function(ev){
+    buf=cat(buf,new Uint8Array(ev.data));
+    for(;;){
+      if(buf.length<2)return;
+      var mul=1,n=0,i=1,b;
+      do{if(i>=buf.length)return;b=buf[i++];n+=(b&127)*mul;mul*=128;}while(b&128);
+      if(buf.length<i+n)return;
+      var h=buf[0],body=buf.subarray(i,i+n);buf=buf.slice(i+n);
+      var t=h>>4;
+      if(t===2){ if(body[1]===0)onState('up'); else onState('refused'); }
+      else if(t===3){ var tl=(body[0]<<8)|body[1],topic=td.decode(body.subarray(2,2+tl)),off=2+tl+(((h>>1)&3)?2:0); onMsg(topic,body.slice(off)); }
+    }
+  };
+  ws.onclose=function(){clearInterval(pingT);onState('down');};
+  ws.onerror=function(){};
+}
+
+function aad(d){return te.encode('crrank-v1|'+d);}
+function seal(obj){
+  var iv=new Uint8Array(12);crypto.getRandomValues(iv);
+  var data=cat(te.encode('C'),te.encode(JSON.stringify(obj)));
+  return crypto.subtle.encrypt({name:'AES-GCM',iv:iv,additionalData:aad('down')},key,data).then(function(ct){return cat(iv,new Uint8Array(ct));});
+}
+function cmd(c,extra){
+  if(!mq)return toast('還沒連上，稍等一下');
+  var o={cmd:c,ts:Date.now(),n:hex(8)};for(var k in extra)o[k]=extra[k];
+  seal(o).then(function(p){mq.publish(TOP_DOWN,p);});
+}
+function onMsg(topic,payload){
+  if(payload.length<29)return;
+  crypto.subtle.decrypt({name:'AES-GCM',iv:payload.subarray(0,12),additionalData:aad('up')},key,payload.subarray(12)).then(function(pt){
+    pt=new Uint8Array(pt);var kind=String.fromCharCode(pt[0]),body=pt.subarray(1);
+    if(kind==='S'){st=JSON.parse(td.decode(body));lastStatus=Date.now();render();}
+    else if(kind==='F'&&!paused){
+      var url=URL.createObjectURL(new Blob([body],{type:'image/jpeg'}));
+      var img=$('screen').querySelector('img');
+      if(!img){$('screen').innerHTML='';img=document.createElement('img');img.alt='電腦畫面';$('screen').appendChild(img);}
+      img.onload=function(){if(frameUrl)URL.revokeObjectURL(frameUrl);frameUrl=url;};
+      img.src=url;lastFrame=Date.now();
+    }
+  }).catch(function(){});
+}
+function fmtNext(n){return n>=120?Math.floor(n/60)+' 分 '+(n%60)+' 秒':n+' 秒';}
+function render(){
+  if(!st)return;
+  $('st').textContent=st.running?('執行中 · 下次 '+fmtNext(st.next_in)+(st.auto_rate&&st.smart?' · 🤖 自動判斷':'')):'已停止';
+  $('cnt').textContent='已點 '+st.count+' 次 · 點擊位置 ('+st.x+', '+st.y+') · 電腦版 v'+st.ver;
+  var go=$('go');go.textContent=st.running?'■ 停止自動收成':'▶ 開始自動收成';go.className='big'+(st.running?' stop':'');
+  if(!edited&&document.activeElement!==$('iv')){$('iv').value=st.interval;$('un').value=st.unit;}
+  $('ar').checked=!!st.auto_rate;$('rate').textContent=st.rate||'';
+  $('bst').textContent=st.buy_text||'';
+  var b=$('buy');b.textContent=st.buy?'■ 停止自動購買':'▶ 開始自動購買';b.style.background=st.buy?'var(--red)':'';
+}
+function tick(){
+  var c=$('conn'),age=(Date.now()-lastStatus)/1000;
+  if(!mq){c.textContent='連線中…';c.className='pill';}
+  else if(!lastStatus||age>45){c.textContent='電腦離線';c.className='pill bad';}
+  else{c.textContent='● 電腦在線';c.className='pill on';}
+  if(st&&st.running&&age<45){var n=Math.max(0,st.next_in-Math.round(age));$('st').textContent='執行中 · 下次 '+fmtNext(n)+(st.auto_rate&&st.smart?' · 🤖 自動判斷':'');}
+  if(lastFrame){var fa=Math.round((Date.now()-lastFrame)/1000);$('frameAge').textContent=(paused?'已暫停 · ':'')+'畫面 '+fa+' 秒前 · 紅圈＝會點的位置';}
+}
+function watch(){if(!paused&&document.visibilityState==='visible')cmd('watch');}
+function connect(){
+  var m=new MQ(BROKERS[BI%BROKERS.length],onMsg,function(s){
+    if(s==='up'){mq=m;m.subscribe(TOP_UP);watch();}
+    else if(s==='down'||s==='refused'){mq=null;setTimeout(connect,3000);}
+  });
+}
+$('go').onclick=function(){cmd(st&&st.running?'stop':'start');toast('已送出，等電腦回應…');};
+$('once').onclick=function(){cmd('once');toast('已叫電腦點一下');};
+$('set').onclick=function(){var v=parseFloat($('iv').value);if(!(v>0))return toast('間隔要大於 0');edited=false;cmd('set',{interval:v,unit:$('un').value});toast('已送出新間隔，看上面的狀態有沒有變');};
+$('iv').oninput=function(){edited=true;};
+$('ar').onchange=function(){cmd('auto_rate',{on:$('ar').checked});toast('已送出');};
+$('read').onclick=function(){cmd('read');toast('電腦正在讀遊戲畫面…');};
+$('buy').onclick=function(){cmd('buy');toast('已送出');};
+$('pause').onclick=function(){paused=!paused;$('pause').textContent=paused?'▶ 繼續畫面':'⏸ 暫停畫面';if(!paused)watch();};
+document.addEventListener('visibilitychange',watch);
+crypto.subtle.importKey('raw',unb64(KEYB),{name:'AES-GCM'},false,['encrypt','decrypt']).then(function(k){key=k;connect();})
+  .catch(function(){$('bad').hidden=false;});
+setInterval(watch,6000);setInterval(tick,1000);
+})();
+</script>
+</body>
+</html>

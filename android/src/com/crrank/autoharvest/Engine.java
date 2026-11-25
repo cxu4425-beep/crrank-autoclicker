@@ -568,9 +568,18 @@ public final class Engine {
 
     // ---------- 區網伺服器 ----------
     public synchronized void startServer() {
+        Remote.get(this).start();  // 🌍 遠端遙控（不用同一個 Wi-Fi）
         if (server != null) return;
         server = new WebServer(this);
         server.start();
+    }
+
+    public String appVersion() {
+        try {
+            return ctx.getPackageManager().getPackageInfo(ctx.getPackageName(), 0).versionName;
+        } catch (Exception ex) {
+            return "?";
+        }
     }
 
     public String url() {

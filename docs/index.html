@@ -139,7 +139,7 @@ footer{border-top:1px solid var(--line);padding:28px 0 40px;color:var(--muted);f
 <main class="wrap">
   <div class="hero">
     <div>
-      <span class="pill">目前版本 <b id="cur-ver">v1.9</b> · 免費、開源</span>
+      <span class="pill">目前版本 <b id="cur-ver">v2.0</b> · 免費、開源</span>
       <h1>知識領土的<span class="hl">自動收成</span>小幫手</h1>
       <p class="lead">定時幫你點「收成」、補貨時自動買商店的東西。電腦、Android、iPhone 都能用，設定一次就能一直掛著。</p>
       <div class="dl">
@@ -183,7 +183,7 @@ footer{border-top:1px solid var(--line);padding:28px 0 40px;color:var(--muted);f
       <div class="card"><div class="ic">💾</div><h3>3 個存檔＋輪播</h3><p>購買步驟自動存檔，可以存 3 組；開「自動輪播」就會做完存檔1接著做存檔2、存檔3。</p></div>
       <div class="card"><div class="ic">🖱️</div><h3>支援滾動</h3><p>商品在畫面下面看不到時，加一個滾動步驟先捲過去再買（電腦用滾輪、手機用滑動）。</p></div>
       <div class="card"><div class="ic">🌙</div><h3>背景與息屏也收成</h3><p>電腦裝一次擴充功能，在原本的 Chrome／Edge（不用重新登入）背景照常收成；Android 息屏時自動改用背景遊戲繼續收成。</p></div>
-      <div class="card"><div class="ic">📱</div><h3>手機遙控</h3><p>手機掃 QR Code，就能開始／停止另一台裝置的連點、改間隔，不用走回電腦前。</p></div>
+      <div class="card"><div class="ic">📱</div><h3>遠端遙控＋實時畫面</h3><p>手機掃 QR Code，4G／5G 也能遙控，不用同一個 Wi-Fi；還看得到實時畫面，確定真的有改到。全程加密。</p></div>
       <div class="card"><div class="ic">🔄</div><h3>自動更新</h3><p>電腦版開啟時檢查新版，按一下就自己下載、替換、重開；Android 會提示下載新的 APK。</p></div>
       <div class="card"><div class="ic">🤖</div><h3>Android App</h3><p>功能和電腦版一樣：浮動控制鈕、全螢幕選位置，還有內建遊戲模式（不用開無障礙權限）。</p></div>
     </div>
@@ -254,6 +254,8 @@ footer{border-top:1px solid var(--line);padding:28px 0 40px;color:var(--muted);f
       <p>手機的瀏覽器在鎖定畫面或切到別的 App 時會暫停，請讓螢幕保持亮著、遊戲分頁留在前面（可以把亮度調低省電）。</p></details>
     <details class="faq"><summary>能量提醒要怎麼發到 Discord？</summary>
       <p>在你的 Discord 伺服器：頻道設定 → 整合 → Webhook → 新 Webhook → 複製網址，貼到面板「⚙️ 領取與提醒」的 Discord Webhook 欄位，按「測試通知」確認。iPhone 的 Safari 不支援網頁通知，建議用這個方式。Webhook 網址只存在你自己的瀏覽器裡，不要分享給別人。</p></details>
+    <details class="faq"><summary>遠端遙控安全嗎？畫面會被別人看到嗎？（v2.0）</summary>
+      <p>指令和畫面經公共 MQTT 中繼伺服器（broker.emqx.io）轉送，但全部用 AES-256-GCM 加密，金鑰只存在 QR Code 連結的 # 後面，瀏覽器不會把它傳到任何伺服器，中繼伺服器看不到內容。畫面只在遙控頁面開著時才傳。連結等於遙控器，不要分享；外流的話在程式裡按「🔄 換新連結」，舊的就失效。不想用可以取消勾選「允許遠端遙控」。</p></details>
     <details class="faq"><summary>自動判斷每小時產量要怎麼用？（v1.9）</summary>
       <p>電腦版預設就開著：在 Chrome／Edge（或安裝成 App 的視窗）打開知識領土就好，不用登入、不用裝東西。程式會透過 Windows 的輔助功能介面讀畫面上的「+產量/時」和「收成 +x/y」，每次收完自動算下一次。Android 要把無障礙服務關掉再打開一次，讓它可以讀取畫面文字。讀不到遊戲時會改用你設定的固定間隔。</p></details>
     <details class="faq"><summary>聰明間隔是怎麼算的？</summary>
@@ -277,7 +279,19 @@ footer{border-top:1px solid var(--line);padding:28px 0 40px;color:var(--muted);f
     <div class="log">
 
       <div class="ver latest">
-        <h3>v1.9 <span class="date">2026-11-25</span> <span class="badge">最新</span></h3>
+        <h3>v2.0 <span class="date">2026-11-25</span> <span class="badge">最新</span></h3>
+        <p class="sum">遠端遙控不用同一個 Wi-Fi，還看得到實時畫面。</p>
+        <ul>
+          <li>🌍 手機掃「🌍 遠端遙控」的 QR Code，4G／5G 或別的 Wi-Fi 都能遙控電腦或 Android：開始／停止、點一下、改間隔、自動判斷、自動購買</li>
+          <li>📺 實時畫面：遙控頁面開著時每 1.5～2 秒傳一張遊戲畫面，紅圈標出會點的位置，改了設定馬上看得到有沒有生效</li>
+          <li>🔒 全程 AES-256-GCM 加密，金鑰只在 QR Code 裡；可以「換新連結」讓舊的失效，或關掉遠端遙控</li>
+          <li>📱 Android 11 以上也能傳畫面（要把無障礙服務關掉再打開一次）</li>
+        </ul>
+        <div class="rels"><a href="https://github.com/cxu4425-beep/crrank-autoclicker/releases/tag/v2.0">查看 v2.0 →</a><a class="src" href="https://github.com/cxu4425-beep/crrank-autoclicker/releases/download/v2.0/source-code.txt">📄 原始碼 txt</a><a class="src" href="https://github.com/cxu4425-beep/crrank-autoclicker/archive/refs/tags/v2.0.zip">📦 原始碼 zip</a></div>
+      </div>
+
+      <div class="ver">
+        <h3>v1.9 <span class="date">2026-11-25</span></h3>
         <p class="sum">自動判斷每小時產量，不用再手動輸入。</p>
         <ul>
           <li>🤖 電腦版定點連點會自己讀你開著的知識領土分頁（Chrome／Edge／App 視窗都可以，不用登入、不用擴充功能），看每小時產量和還沒收的數量</li>

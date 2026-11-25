@@ -13,6 +13,7 @@ FILES = [
     "make_source_txt.py",
     "README.md",
     "docs/index.html",
+    "docs/remote.html",
     ".gitignore",
     "android/build.ps1",
     "android/AndroidManifest.xml",

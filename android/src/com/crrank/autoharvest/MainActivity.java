@@ -835,8 +835,49 @@ public class MainActivity extends Activity {
     }
 
     // ---------- 分頁 2：手機 / 遙控（對應電腦版「手機」分頁） ----------
+    private ImageView rqr;
+    private TextView remoteTxt;
+    private String lastRemoteUrl = "";
+
     private View buildPhoneTab() {
         LinearLayout p = page();
+        final Remote rm = Remote.get(e);
+        p.addView(label("🌍 遠端遙控（不用同一個 Wi-Fi）", 16, true));
+        p.addView(hint("用另一支手機或電腦掃描，4G／5G 或別的 Wi-Fi 都能遙控，還看得到這支手機的實時畫面（紅圈＝會點的位置，需要 Android 11 以上）。"));
+        rqr = new ImageView(this);
+        rqr.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        LinearLayout.LayoutParams rp = new LinearLayout.LayoutParams(dp(240), dp(240));
+        rp.gravity = Gravity.CENTER_HORIZONTAL;
+        rp.setMargins(0, dp(8), 0, dp(8));
+        p.addView(rqr, rp);
+        CheckBox ron = check("允許遠端遙控");
+        ron.setChecked(rm.enabled());
+        ron.setOnCheckedChangeListener((v, on) -> {
+            rm.setEnabled(on);
+            lastRemoteUrl = "";
+            refresh();
+        });
+        p.addView(ron);
+        remoteTxt = label("", 14, true);
+        remoteTxt.setTextColor(0xFF2F6FDE);
+        p.addView(remoteTxt);
+        p.addView(row2(btn("🔗 複製連結", v -> {
+            ClipboardManager cm = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+            cm.setPrimaryClip(ClipData.newPlainText("遠端遙控", rm.url()));
+            Toast.makeText(this, "已複製。這個連結等於遙控器，只傳給自己的裝置。", Toast.LENGTH_LONG).show();
+        }), btn("🔄 換新連結", v -> new AlertDialog.Builder(this).setTitle("換新連結")
+                .setMessage("換新連結後，舊的 QR Code／連結就不能用了，要重新掃描。確定嗎？")
+                .setPositiveButton("換新", (d, w) -> {
+                    rm.newKeys();
+                    rm.restart();
+                    lastRemoteUrl = "";
+                    refresh();
+                }).setNegativeButton("取消", null).show())));
+        p.addView(hint("🔒 指令和畫面經公共中繼伺服器（broker.emqx.io）轉送，但全部用只存在這個 QR Code 裡的金鑰加密（AES-256），"
+                + "伺服器看不到內容。畫面只在遙控頁面開著時才傳。第一次傳畫面前，要到無障礙設定把服務關掉再打開一次。"));
+        p.addView(sep());
+
+        p.addView(label("📶 同一個 Wi-Fi：書籤／使用者腳本", 16, true));
         p.addView(label("其他裝置（電腦或另一支手機）和這支手機連同一個 Wi-Fi，用相機掃描：", 15, true));
         qr = new ImageView(this);
         qr.setScaleType(ImageView.ScaleType.FIT_CENTER);
@@ -1027,11 +1068,22 @@ public class MainActivity extends Activity {
         if (!u.equals(lastUrl)) {
             lastUrl = u;
             urlTxt.setText(u);
-            drawQr(u);
+            drawQr(qr, u);
+        }
+        if (rqr != null) {
+            Remote rm = Remote.get(e);
+            String ru = rm.enabled() ? rm.url() : "";
+            if (!ru.equals(lastRemoteUrl)) {
+                lastRemoteUrl = ru;
+                if (ru.isEmpty()) rqr.setImageDrawable(null);
+                else drawQr(rqr, ru);
+            }
+            boolean watching = System.currentTimeMillis() < rm.watchUntil;
+            remoteTxt.setText(rm.enabled() ? "● " + rm.state + (watching ? "　📺 有人正在看畫面" : "") : "遠端遙控已關閉");
         }
     }
 
-    private void drawQr(String text) {
+    private void drawQr(ImageView qr, String text) {
         try {
             boolean[][] m = QrGen.encode(text);
             int n = m.length, border = 2, s = 8, size = (n + border * 2) * s;

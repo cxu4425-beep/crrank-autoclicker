@@ -131,6 +131,60 @@ public class ClickService extends AccessibilityService {
         dispatchGesture(new GestureDescription.Builder().addStroke(sd).build(), null, null);
     }
 
+    // ---------- 🌍 遠端遙控的實時畫面（Android 11 以上） ----------
+    public interface JpegCallback {
+        void done(byte[] jpg);
+    }
+
+    public void captureJpeg(final int cx, final int cy, final JpegCallback cb) {
+        if (android.os.Build.VERSION.SDK_INT < 30) {
+            cb.done(null);
+            return;
+        }
+        try {
+            takeScreenshot(android.view.Display.DEFAULT_DISPLAY, getMainExecutor(), new TakeScreenshotCallback() {
+                @Override
+                public void onSuccess(ScreenshotResult r) {
+                    new Thread(() -> {
+                        byte[] out = null;
+                        try {
+                            android.hardware.HardwareBuffer hb = r.getHardwareBuffer();
+                            android.graphics.Bitmap hw = android.graphics.Bitmap.wrapHardwareBuffer(hb, r.getColorSpace());
+                            android.graphics.Bitmap bm = hw.copy(android.graphics.Bitmap.Config.ARGB_8888, true);
+                            hw.recycle();
+                            hb.close();
+                            android.graphics.Canvas c = new android.graphics.Canvas(bm);
+                            android.graphics.Paint p = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+                            p.setColor(0xFFFF3C3C);
+                            p.setStyle(android.graphics.Paint.Style.STROKE);
+                            p.setStrokeWidth(Math.max(4, bm.getWidth() / 150f));
+                            float rr = Math.max(18, bm.getWidth() / 25f);
+                            c.drawCircle(cx, cy, rr, p);
+                            c.drawLine(cx - rr * 1.8f, cy, cx + rr * 1.8f, cy, p);
+                            c.drawLine(cx, cy - rr * 1.8f, cx, cy + rr * 1.8f, p);
+                            int w = Math.min(540, bm.getWidth());
+                            android.graphics.Bitmap sm = android.graphics.Bitmap.createScaledBitmap(bm, w, bm.getHeight() * w / bm.getWidth(), true);
+                            java.io.ByteArrayOutputStream bo = new java.io.ByteArrayOutputStream();
+                            sm.compress(android.graphics.Bitmap.CompressFormat.JPEG, 55, bo);
+                            out = bo.toByteArray();
+                            if (sm != bm) sm.recycle();
+                            bm.recycle();
+                        } catch (Throwable ignored) {
+                        }
+                        cb.done(out);
+                    }).start();
+                }
+
+                @Override
+                public void onFailure(int code) {
+                    cb.done(null);  // 息屏或太頻繁時會失敗，下次再試
+                }
+            });
+        } catch (Throwable t) {
+            cb.done(null);
+        }
+    }
+
     // ---------- 背景遊戲：隱藏的遊戲視窗（透明、點不到），切去用別的 App 也會繼續跑 ----------
     private FrameLayout bgBox;
     private android.webkit.WebView bgWeb;

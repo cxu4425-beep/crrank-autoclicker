@@ -16,7 +16,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from tkinter import filedialog, messagebox, ttk
 
 APP_NAME = "CR Rank 自動收成器"
-APP_VERSION = "1.8"
+APP_VERSION = "1.8.1"
 REPO = "cxu4425-beep/crrank-autoclicker"
 GAME_URL = "https://crrank.xpgs25.com/game"
 
@@ -937,6 +937,73 @@ def WRAP(px=430):
     return int(px * UI_K)
 
 
+def _hex(c):
+    return tuple(int(c[i:i + 2], 16) for i in (1, 3, 5))
+
+
+def _indicator_img(n, radio, on, bg):
+    """畫手機版風格的勾選框／圓點（3x3 超取樣去鋸齒）。"""
+    import math
+    P = PAL
+    img = tk.PhotoImage(width=n + int(7 * UI_K), height=n)  # 右邊留透明空白當間距
+    cbg, cline, cfill, cmark = _hex(bg), _hex(P["line"] if not on else P["accent_h"]), _hex("#FFFFFF" if not on else P["accent"]), _hex(P["ink"])
+    rad = n * 0.22
+    bw = max(1.2, n / 14)
+
+    def inside_shape(x, y, inset):
+        if radio:
+            return math.hypot(x - n / 2, y - n / 2) <= n / 2 - 0.5 - inset
+        lo, hi = 0.5 + inset, n - 0.5 - inset
+        r = max(0.1, rad - inset)
+        cx, cy = min(max(x, lo + r), hi - r), min(max(y, lo + r), hi - r)
+        return lo <= x <= hi and lo <= y <= hi and math.hypot(x - cx, y - cy) <= r
+
+    def seg(px, py, ax, ay, bx, by):
+        dx, dy = bx - ax, by - ay
+        t = max(0, min(1, ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy)))
+        return math.hypot(px - ax - t * dx, py - ay - t * dy)
+
+    rows = []
+    for yy in range(n):
+        row = []
+        for xx in range(n):
+            acc = [0.0, 0.0, 0.0]
+            for sy in (0.17, 0.5, 0.83):
+                for sx in (0.17, 0.5, 0.83):
+                    x, y = xx + sx, yy + sy
+                    col = cbg
+                    if inside_shape(x, y, 0):
+                        col = cline
+                        if inside_shape(x, y, bw):
+                            col = cfill
+                            if on and radio and math.hypot(x - n / 2, y - n / 2) <= n * 0.2:
+                                col = cmark
+                            if on and not radio and min(seg(x, y, n * .24, n * .52, n * .43, n * .71),
+                                                        seg(x, y, n * .43, n * .71, n * .77, n * .31)) <= n * .075:
+                                col = cmark
+                    for i in range(3):
+                        acc[i] += col[i]
+            row.append("#%02x%02x%02x" % tuple(int(v / 9) for v in acc))
+        rows.append("{" + " ".join(row) + "}")
+    img.put(" ".join(rows), to=(0, 0))
+    return img
+
+
+def _indicators(root, st):
+    n = int(17 * UI_K)
+    imgs = {}
+    for radio in (False, True):
+        for on in (False, True):
+            imgs[(radio, on)] = _indicator_img(n, radio, on, PAL["card"])
+    root._crac_imgs = imgs  # 保留參照，不然圖片會被回收
+    for w, radio in (("Checkbutton", False), ("Radiobutton", True)):
+        el = f"Crac.{w}.indicator"
+        st.element_create(el, "image", imgs[(radio, False)], ("selected", imgs[(radio, True)]), sticky="w")
+        st.layout("T" + w, [(f"{w}.padding", {"sticky": "nswe", "children": [
+            (el, {"side": "left", "sticky": ""}),
+            (f"{w}.label", {"side": "left", "sticky": "nswe"})]})])
+
+
 def setup_theme(root):
     st = ttk.Style(root)
     st.theme_use("clam")
@@ -949,7 +1016,7 @@ def setup_theme(root):
     st.configure("Card.TFrame", background=P["card"], relief="solid", borderwidth=1, bordercolor=P["line"])
     st.configure("Row.TFrame", background=P["card"])
     for name, extra in (("Card.TLabel", {}), ("Muted.TLabel", dict(foreground=P["muted"], font=(FONT, 9))),
-                        ("Title.TLabel", dict(font=(FONT, 12, "bold"))), ("Bold.TLabel", dict(font=(FONT, 10, "bold"))),
+                        ("Title.TLabel", dict(font=(FONT, 13, "bold"))), ("Bold.TLabel", dict(font=(FONT, 10, "bold"))),
                         ("Ok.TLabel", dict(foreground=P["green"], font=(FONT, 9))),
                         ("Info.TLabel", dict(foreground=P["blue"], font=(FONT, 10, "bold")))):
         st.configure(name, background=P["card"], **extra)
@@ -957,13 +1024,16 @@ def setup_theme(root):
     st.map("TButton", background=[("pressed", P["line"]), ("active", "#ECE6D8")])
     st.configure("Accent.TButton", background=P["accent"], bordercolor=P["accent_h"], font=(FONT, 10, "bold"))
     st.map("Accent.TButton", background=[("pressed", P["accent_h"]), ("active", P["accent_h"])])
-    st.configure("TEntry", fieldbackground="#FFFFFF", bordercolor=P["line"], padding=(6, 4))
+    st.configure("TEntry", fieldbackground="#FFFFFF", bordercolor=P["line"], lightcolor="#FFFFFF", darkcolor=P["line"], padding=(8, 5))
     st.map("TEntry", bordercolor=[("focus", P["blue"])], lightcolor=[("focus", P["blue"])])
     st.configure("TCombobox", fieldbackground="#FFFFFF", background=P["soft"], bordercolor=P["line"], padding=(6, 3), arrowsize=14)
     st.map("TCombobox", fieldbackground=[("readonly", "#FFFFFF")], bordercolor=[("focus", P["blue"])])
     for w in ("TCheckbutton", "TRadiobutton"):
-        st.configure(w, background=P["card"], indicatorbackground="#FFFFFF", indicatorforeground=P["ink"], padding=(0, 3))
+        st.configure(w, background=P["card"], indicatorbackground="#FFFFFF", indicatorforeground=P["ink"], padding=(0, 4),
+                     indicatorsize=int(15 * UI_K), indicatormargin=(0, 0, int(6 * UI_K), 0), upperbordercolor=P["line"],
+                     lowerbordercolor=P["line"])
         st.map(w, background=[("active", P["card"])], indicatorbackground=[("selected", P["accent"])])
+    _indicators(root, st)
     st.configure("TNotebook", background=P["bg"], borderwidth=0, tabmargins=(10, 8, 10, 0))
     st.configure("TNotebook.Tab", padding=(18, 8), background="#E7E1D3", foreground=P["muted"], font=(FONT, 10, "bold"), borderwidth=0)
     st.map("TNotebook.Tab", background=[("selected", P["card"])], foreground=[("selected", P["ink"])],
@@ -972,23 +1042,143 @@ def setup_theme(root):
     st.configure("Treeview.Heading", background=P["soft"], font=(FONT, 9, "bold"), relief="flat", padding=(4, 4))
     st.map("Treeview", background=[("selected", P["sel"])], foreground=[("selected", P["ink"])])
     st.configure("TSeparator", background=P["line"])
-    st.configure("Vertical.TScrollbar", background=P["soft"], bordercolor=P["bg"], arrowcolor=P["muted"], gripcount=0)
+    st.layout("Slim.Vertical.TScrollbar", [("Vertical.Scrollbar.trough", {"sticky": "ns", "children": [
+        ("Vertical.Scrollbar.thumb", {"expand": "1", "sticky": "nswe"})]})])
+    st.configure("Slim.Vertical.TScrollbar", background="#D6D0C2", troughcolor=P["bg"], bordercolor=P["bg"],
+                 lightcolor="#D6D0C2", darkcolor="#D6D0C2", gripcount=0, arrowsize=int(8 * UI_K))
+    st.map("Slim.Vertical.TScrollbar", background=[("active", "#BDB6A6")])
     return st
 
 
-class HoverButton(tk.Button):
-    """扁平大按鈕，滑鼠移上去會變色。"""
+def _bg_of(w):
+    """取得父元件的底色（tk 或 ttk 都可以）。"""
+    try:
+        return w.cget("background")
+    except Exception:
+        pass
+    try:
+        return ttk.Style().lookup(w.cget("style") or w.winfo_class(), "background") or PAL["bg"]
+    except Exception:
+        return PAL["bg"]
 
-    def __init__(self, parent, text, command, bg, hover, **kw):
-        super().__init__(parent, text=text, command=command, relief="flat", bd=0, cursor="hand2",
-                         font=(FONT, 12, "bold"), fg=PAL["ink"], activeforeground=PAL["ink"], padx=14, pady=10, **kw)
-        self.set_colors(bg, hover)
-        self.bind("<Enter>", lambda e: self.config(bg=self._hover))
-        self.bind("<Leave>", lambda e: self.config(bg=self._bg))
 
-    def set_colors(self, bg, hover):
-        self._bg, self._hover = bg, hover
-        self.config(bg=bg, activebackground=hover)
+def rrect(cv, x1, y1, x2, y2, r, **kw):
+    """在 Canvas 上畫圓角矩形。"""
+    r = max(1, min(r, (x2 - x1) / 2, (y2 - y1) / 2))
+    pts = [x1 + r, y1, x2 - r, y1, x2, y1, x2, y1 + r, x2, y2 - r, x2, y2, x2 - r, y2, x1 + r, y2,
+           x1, y2, x1, y2 - r, x1, y1 + r, x1, y1]
+    return cv.create_polygon(pts, smooth=True, **kw)
+
+
+class RoundBtn(tk.Canvas):
+    """手機版風格的圓角按鈕（也可當不能按的膠囊標籤）。"""
+
+    KINDS = None
+
+    def __init__(self, parent, text="", command=None, kind="soft", big=False, style=None, small=False):
+        import tkinter.font as tkfont
+        P = PAL
+        kinds = {"soft": (P["soft"], "#E9E3D5", P["ink"]), "accent": (P["accent"], P["accent_h"], P["ink"]),
+                 "sky": (P["sky"], P["sky_h"], P["ink"]), "red": (P["red"], P["red_h"], P["ink"]),
+                 "tab": ("#2D3346", "#3A4158", "#C9CEDC"), "chip": ("#2D3346", "#2D3346", "#C9CEDC"),
+                 "white": ("#FFFFFF", "#FFF4D6", P["ink"])}
+        if style == "Accent.TButton":
+            kind = "accent"
+        self._bg, self._hover, self._fg = kinds.get(kind, kinds["soft"])
+        size = 13 if big else (9 if small else 10)
+        bold = big or small or kind in ("accent", "sky", "red", "tab")
+        self._font = tkfont.Font(family=FONT, size=size, weight="bold" if bold else "normal")
+        self._h = int((54 if big else (26 if small else 38)) * UI_K)
+        self._padx = int((12 if small else 16) * UI_K)
+        self._r = int((16 if big else (13 if small else 12)) * UI_K)
+        self._text, self._cmd, self._hot, self._down = text, command, False, False
+        super().__init__(parent, height=self._h, width=self._need(), bg=_bg_of(parent), highlightthickness=0, bd=0,
+                         cursor="hand2" if command else "arrow")
+        self.bind("<Configure>", lambda e: self.draw())
+        if command:
+            self.bind("<Enter>", lambda e: self._set(hot=True))
+            self.bind("<Leave>", lambda e: self._set(hot=False, down=False))
+            self.bind("<ButtonPress-1>", lambda e: self._set(down=True))
+            self.bind("<ButtonRelease-1>", self._release)
+
+    def _need(self):
+        return self._font.measure(self._text) + self._padx * 2
+
+    def _set(self, hot=None, down=None):
+        if hot is not None:
+            self._hot = hot
+        if down is not None:
+            self._down = down
+        self.draw()
+
+    def _release(self, e):
+        inside = 0 <= e.x <= self.winfo_width() and 0 <= e.y <= self.winfo_height()
+        self._set(down=False)
+        if inside and self._cmd:
+            self._cmd()
+
+    def draw(self):
+        self.delete("all")
+        w, h = self.winfo_width(), self.winfo_height()
+        if w < 4:
+            w, h = self._need(), self._h
+        fill = self._hover if (self._hot or self._down) else self._bg
+        o = 1 if self._down else 0
+        rrect(self, 0, 0, w - 1, h - 1, self._r, fill=fill, outline=fill)
+        self.create_text(w / 2, h / 2 + o, text=self._text, font=self._font, fill=self._fg)
+
+    def set_colors(self, bg, hover, fg=None):
+        if (bg, hover, fg or self._fg) != (self._bg, self._hover, self._fg):
+            self._bg, self._hover = bg, hover
+            if fg:
+                self._fg = fg
+            self.draw()
+
+    def config(self, cnf=None, **kw):
+        changed = False
+        if "text" in kw:
+            t = kw.pop("text")
+            if t != self._text:
+                self._text = t
+                super().configure(width=self._need())
+                changed = True
+        if "bg" in kw or "fg" in kw:  # 膠囊標籤：bg/fg 代表填色和字色
+            bg, fg = kw.pop("bg", self._bg), kw.pop("fg", self._fg)
+            if (bg, fg) != (self._bg, self._fg):
+                self._bg = self._hover = bg
+                self._fg = fg
+                changed = True
+        if cnf or kw:
+            super().configure(cnf, **kw)
+        if changed:
+            self.draw()
+
+    configure = config
+
+
+class RoundBox(tk.Canvas):
+    """圓角底框，內容放在 .inner；高度跟著內容自動變。"""
+
+    def __init__(self, parent, fill, outline=None, radius=18, pad=(16, 12, 16, 14)):
+        super().__init__(parent, bg=_bg_of(parent), highlightthickness=0, bd=0, height=20)
+        self._fill, self._outline, self._r = fill, outline or fill, int(radius * UI_K)
+        self._pad = [int(p * UI_K) for p in pad]
+        self.inner = tk.Frame(self, bg=fill)
+        self._win = self.create_window(self._pad[0], self._pad[1], window=self.inner, anchor="nw")
+        self.inner.bind("<Configure>", self._fit)
+        self.bind("<Configure>", lambda e: self._redraw())
+
+    def _fit(self, e):
+        h = e.height + self._pad[1] + self._pad[3]
+        if int(self.cget("height")) != h:
+            self.configure(height=h)
+
+    def _redraw(self):
+        w, h = self.winfo_width(), self.winfo_height()
+        self.itemconfigure(self._win, width=max(10, w - self._pad[0] - self._pad[2]))
+        self.delete("bg")
+        rrect(self, 1, 1, w - 2, h - 2, self._r, fill=self._fill, outline=self._outline, tags="bg")
+        self.tag_lower("bg")
 
 
 class ScrollFrame(ttk.Frame):
@@ -997,8 +1187,8 @@ class ScrollFrame(ttk.Frame):
     def __init__(self, parent):
         super().__init__(parent)
         self.canvas = tk.Canvas(self, bg=PAL["bg"], highlightthickness=0, bd=0)
-        sb = ttk.Scrollbar(self, orient="vertical", command=self.canvas.yview)
-        self.inner = ttk.Frame(self.canvas, padding=(12, 6, 12, 12))
+        sb = ttk.Scrollbar(self, orient="vertical", command=self.canvas.yview, style="Slim.Vertical.TScrollbar")
+        self.inner = ttk.Frame(self.canvas, padding=(14, 8, 10, 24))
         self._win = self.canvas.create_window((0, 0), window=self.inner, anchor="nw")
         self.canvas.configure(yscrollcommand=sb.set)
         self.canvas.pack(side="left", fill="both", expand=True)
@@ -1019,8 +1209,9 @@ class ScrollFrame(ttk.Frame):
 
 def card(parent, title, subtitle=None):
     """白色卡片＋標題，回傳放內容的框。"""
-    outer = ttk.Frame(parent, style="Card.TFrame", padding=(16, 12, 16, 14))
-    outer.pack(fill="x", pady=6)
+    box = RoundBox(parent, PAL["card"], PAL["line"], 18)
+    box.pack(fill="x", pady=6)
+    outer = box.inner
     ttk.Label(outer, text=title, style="Title.TLabel").pack(anchor="w")
     if subtitle:
         ttk.Label(outer, text=subtitle, style="Muted.TLabel", wraplength=WRAP(), justify="left").pack(anchor="w", pady=(0, 4))
@@ -1067,6 +1258,8 @@ class App:
         self.server = None
         self.url = ""
         self.build_ui()
+        t = self.s.get("tab", 0)
+        self.show_tab(t if t in (0, 1, 2) else 0)
         self.start_server()
         self.root.protocol("WM_DELETE_WINDOW", self.quit)
         self.root.after(200, self.poll)
@@ -1120,8 +1313,8 @@ class App:
 
         b = ttk.Frame(f)
         b.grid(row=4, column=0, columnspan=2, sticky="we")
-        ttk.Button(b, text="計算", command=compute).pack(side="left")
-        ttk.Button(b, text="套用到間隔", command=lambda: compute(True)).pack(side="left", padx=6)
+        RoundBtn(b, text="計算", command=compute).pack(side="left")
+        RoundBtn(b, text="套用到間隔", command=lambda: compute(True)).pack(side="left", padx=6)
 
     # ----- ⑤ 自動更新 -----
     def check_update(self, manual=False):
@@ -1226,33 +1419,33 @@ class App:
     # ----- UI -----
     def build_ui(self):
         P = PAL
-        # ---- 頂部標題列 ----
-        head = tk.Frame(self.root, bg=P["head"], padx=16, pady=12)
+        # ---- 頂部標題列（和手機版一樣：深色標題＋膠囊分頁） ----
+        head = tk.Frame(self.root, bg=P["head"])
         head.pack(fill="x")
-        logo = tk.Canvas(head, width=34, height=34, bg=P["head"], highlightthickness=0)
-        logo.create_oval(1, 1, 33, 33, fill=P["accent"], outline="")
-        logo.create_oval(8, 8, 26, 26, fill=P["head"], outline="")
-        logo.create_oval(12, 12, 22, 22, fill=P["accent"], outline="")
-        logo.pack(side="left")
-        tt = tk.Frame(head, bg=P["head"])
-        tt.pack(side="left", padx=10)
-        tk.Label(tt, text="CR Rank 自動收成器", bg=P["head"], fg="#FFFFFF", font=(FONT, 13, "bold")).pack(anchor="w")
+        top = tk.Frame(head, bg=P["head"])
+        top.pack(fill="x", padx=int(18 * UI_K), pady=(int(14 * UI_K), int(10 * UI_K)))
+        tt = tk.Frame(top, bg=P["head"])
+        tt.pack(side="left")
+        tk.Label(tt, text="🌾 CR Rank 自動收成", bg=P["head"], fg="#FFFFFF", font=(FONT, 15, "bold")).pack(anchor="w")
         tk.Label(tt, text=f"v{APP_VERSION} · 知識領土小幫手", bg=P["head"], fg="#A7ADBF", font=(FONT, 9)).pack(anchor="w")
-        chips = tk.Frame(head, bg=P["head"])
+        chips = tk.Frame(top, bg=P["head"])
         chips.pack(side="right")
-        self.chip_h = tk.Label(chips, text="收成 ● 停止", bg="#2D3346", fg="#C9CEDC", font=(FONT, 9, "bold"), padx=10, pady=3)
+        self.chip_h = RoundBtn(chips, "收成 ● 停止", kind="chip", small=True)
         self.chip_h.pack(anchor="e", pady=(0, 4))
-        self.chip_b = tk.Label(chips, text="購買 ● 停止", bg="#2D3346", fg="#C9CEDC", font=(FONT, 9, "bold"), padx=10, pady=3)
+        self.chip_b = RoundBtn(chips, "購買 ● 停止", kind="chip", small=True)
         self.chip_b.pack(anchor="e")
-
-        nb = ttk.Notebook(self.root)
-        nb.pack(fill="both", expand=True)
-        self.nb = nb
-        pcs, buys, phs = ScrollFrame(nb), ScrollFrame(nb), ScrollFrame(nb)
-        nb.add(pcs, text="🖱 電腦連點")
-        nb.add(buys, text="🛒 自動購買")
-        nb.add(phs, text="📱 手機")
-        self.buy_tab = buys
+        bar = tk.Frame(head, bg=P["head"])
+        bar.pack(fill="x", padx=int(12 * UI_K), pady=(0, int(12 * UI_K)))
+        content = tk.Frame(self.root, bg=P["bg"])
+        content.pack(fill="both", expand=True)
+        pcs, buys, phs = ScrollFrame(content), ScrollFrame(content), ScrollFrame(content)
+        self.pages = [pcs, buys, phs]
+        self.tab_btns = []
+        for i, name in enumerate(("🖱 電腦連點", "🛒 自動購買", "📱 手機")):
+            t = RoundBtn(bar, name, command=lambda k=i: self.show_tab(k), kind="tab")
+            t.pack(side="left", padx=int(3 * UI_K))
+            self.tab_btns.append(t)
+        self.cur_tab = 0
         self.build_buy_tab(buys.inner)
         pc, ph = pcs.inner, phs.inner
 
@@ -1266,8 +1459,8 @@ class App:
         lbl(r, "Y").pack(side="left")
         ttk.Entry(r, textvariable=self.vy, width=8).pack(side="left", padx=6)
         r = row(c, 6)
-        ttk.Button(r, text="🎯 在螢幕上選位置", style="Accent.TButton", command=self.pick).pack(side="left", fill="x", expand=True)
-        ttk.Button(r, text="測試點一下", command=self.test_click).pack(side="left", fill="x", expand=True, padx=(8, 0))
+        RoundBtn(r, text="🎯 在螢幕上選位置", style="Accent.TButton", command=self.pick).pack(side="left", fill="x", expand=True)
+        RoundBtn(r, text="測試點一下", command=self.test_click).pack(side="left", fill="x", expand=True, padx=(8, 0))
         lbl(c, "或把滑鼠移到「收成」按鈕上按 F8 記錄", "Muted.TLabel").pack(anchor="w")
 
         # ---- 間隔 ----
@@ -1279,7 +1472,7 @@ class App:
         self.vun = tk.StringVar(value=self.s["unit"])
         ttk.Combobox(r, textvariable=self.vun, values=list(UNIT_SEC), width=4, state="readonly").pack(side="left")
         lbl(r, "點一次").pack(side="left", padx=6)
-        ttk.Button(r, text="📊 依產量算", command=self.calc_interval).pack(side="right")
+        RoundBtn(r, text="📊 依產量算", command=self.calc_interval).pack(side="right")
         r = row(c)
         lbl(r, "隨機誤差 ±").pack(side="left")
         self.vjit = tk.StringVar(value=str(self.s["jitter"]))
@@ -1296,21 +1489,21 @@ class App:
 
         # ---- 開始 ----
         c = card(pc, "▶ 自動收成")
-        self.btn = HoverButton(c, "▶  開始自動收成  (F9)", self.toggle, P["accent"], P["accent_h"])
+        self.btn = RoundBtn(c, "▶  開始自動收成  (F9)", self.toggle, kind="accent", big=True)
         self.btn.pack(fill="x")
         self.status = lbl(c, "已停止", "Info.TLabel")
         self.status.pack(anchor="w", pady=(8, 0))
         lbl(c, "提示：這個模式會移動真的滑鼠，遊戲畫面要停在原位、不要被擋住。", "Muted.TLabel",
             wraplength=WRAP(), justify="left").pack(anchor="w")
-        ttk.Button(c, text="🌐 開啟知識領土網站", command=lambda: webbrowser.open(GAME_URL)).pack(fill="x", pady=(8, 0))
+        RoundBtn(c, text="🌐 開啟知識領土網站", command=lambda: webbrowser.open(GAME_URL)).pack(fill="x", pady=(8, 0))
 
         # ---- 背景模式 ----
         c = card(pc, "🌙 背景模式", "遊戲不用放在前台：用面板直接點網頁上的按鈕，分頁放背景、被蓋住都會繼續跑。")
-        ttk.Button(c, text="🧩 用原本的 Chrome（安裝擴充功能，不用重新登入）", style="Accent.TButton",
+        RoundBtn(c, text="🧩 用原本的 Chrome（安裝擴充功能，不用重新登入）", style="Accent.TButton",
                    command=self.install_extension).pack(fill="x")
         lbl(c, "推薦。只要裝一次，之後在平常的 Chrome 打開知識領土就會自動出現面板，Chrome 也不會把遊戲分頁卸載。",
             "Muted.TLabel", wraplength=WRAP(), justify="left").pack(anchor="w", pady=(4, 8))
-        self.bgbtn = ttk.Button(c, text="開啟專用背景視窗（要另外登入）", command=self.toggle_bg)
+        self.bgbtn = RoundBtn(c, text="開啟專用背景視窗（要另外登入）", command=self.toggle_bg)
         self.bgbtn.pack(fill="x")
         self.bglbl = lbl(c, "未開啟", "Muted.TLabel", wraplength=WRAP())
         self.bglbl.pack(anchor="w", pady=(4, 0))
@@ -1319,7 +1512,7 @@ class App:
         c = card(pc, "🔄 版本與更新")
         r = row(c)
         lbl(r, f"目前版本 v{APP_VERSION}", "Bold.TLabel").pack(side="left")
-        ttk.Button(r, text="檢查更新", command=lambda: self.check_update(manual=True)).pack(side="right")
+        RoundBtn(r, text="檢查更新", command=lambda: self.check_update(manual=True)).pack(side="right")
         self.vauto_up = tk.BooleanVar(value=self.s.get("auto_update", True))
         ttk.Checkbutton(c, text="開啟時自動檢查更新", variable=self.vauto_up,
                         command=lambda: (self.s.__setitem__("auto_update", self.vauto_up.get()), save_settings(self.s))).pack(anchor="w")
@@ -1327,20 +1520,33 @@ class App:
         # ---- 手機分頁 ----
         c = card(ph, "📱 用手機掃描", "手機和電腦連同一個 Wi-Fi，用手機相機掃描下面的 QR Code。")
         qbox = tk.Frame(c, bg="#FFFFFF", highlightbackground=P["line"], highlightthickness=1, padx=8, pady=8)
-        qbox.pack(pady=6)
+        qbox.pack(pady=6)  # QR Code 保持方形白底，手機比較好掃
         self.qr = tk.Canvas(qbox, width=220, height=220, bg="white", highlightthickness=0)
         self.qr.pack()
         self.url_lbl = ttk.Entry(c, width=44)
         self.url_lbl.pack(fill="x", pady=(4, 0))
         c = card(ph, "📖 手機頁面能做什麼")
-        for t in ("• 書籤／使用者腳本：在手機瀏覽器的遊戲頁上自動點「收成」，可設間隔、自動找按鈕或自訂位置。",
-                  "• 遙控：用手機開始／停止電腦這邊的連點、改間隔。",
-                  "• iPhone 也能用：掃描後照頁面裡的「iPhone 教學」設定。",
+        for t in ("•書籤／使用者腳本：在手機瀏覽器的遊戲頁上自動點「收成」，可設間隔、自動找按鈕或自訂位置。",
+                  "•遙控：用手機開始／停止電腦這邊的連點、改間隔。",
+                  "•iPhone 也能用：掃描後照頁面裡的「iPhone 教學」設定。",
                   "第一次啟動時 Windows 防火牆若跳出詢問，請按「允許」。"):
             lbl(c, t, wraplength=WRAP(), justify="left").pack(anchor="w", pady=2)
         c = card(ph, "📁 檔案")
-        ttk.Button(c, text="📁 匯出手機用檔案（腳本、書籤、說明）", command=self.export).pack(fill="x")
-        ttk.Button(c, text="在電腦瀏覽器開啟手機頁", command=lambda: webbrowser.open(self.url)).pack(fill="x", pady=(6, 0))
+        RoundBtn(c, text="📁 匯出手機用檔案（腳本、書籤、說明）", command=self.export).pack(fill="x")
+        RoundBtn(c, text="在電腦瀏覽器開啟手機頁", command=lambda: webbrowser.open(self.url)).pack(fill="x", pady=(6, 0))
+
+    def show_tab(self, k):
+        self.cur_tab = k
+        for i, (pg, b) in enumerate(zip(self.pages, self.tab_btns)):
+            if i == k:
+                pg.pack(fill="both", expand=True)
+                b.set_colors(PAL["accent"], PAL["accent_h"], PAL["ink"])
+            else:
+                pg.pack_forget()
+                b.set_colors("#2D3346", "#3A4158", "#C9CEDC")
+        if self.s.get("tab") != k:
+            self.s["tab"] = k
+            save_settings(self.s)
 
     def draw_qr(self, text):
         self.qr.delete("all")
@@ -1456,8 +1662,8 @@ class App:
         self.slot_cb = ttk.Combobox(r, textvariable=self.vslot, state="readonly", width=16)
         self.slot_cb.pack(side="left")
         self.slot_cb.bind("<<ComboboxSelected>>", lambda e: self.switch_slot(self.slot_cb.current()))
-        ttk.Button(r, text="改名", command=self.rename_slot).pack(side="left", padx=(8, 0))
-        ttk.Button(r, text="清空", command=self.clear_slot).pack(side="left", padx=(6, 0))
+        RoundBtn(r, text="改名", command=self.rename_slot).pack(side="left", padx=(8, 0))
+        RoundBtn(r, text="清空", command=self.clear_slot).pack(side="left", padx=(6, 0))
         self.vrot = tk.BooleanVar(value=self.s.get("buy_rotate", False))
         ttk.Checkbutton(c, text="自動輪播（做完一個存檔接下一個）", variable=self.vrot, command=self.set_rotate).pack(anchor="w", pady=(4, 0))
         self.saved_lbl = lbl(c, "", "Ok.TLabel")
@@ -1474,8 +1680,9 @@ class App:
         tv.bind("<<TreeviewSelect>>", lambda e: self.load_step())
         self.tv = tv
 
-        ed = tk.Frame(c, bg=P["soft"], padx=10, pady=8)
-        ed.pack(fill="x", pady=(8, 0))
+        edbox = RoundBox(c, P["soft"], None, 14, (12, 10, 12, 10))
+        edbox.pack(fill="x", pady=(8, 0))
+        ed = edbox.inner
         self.st_name = tk.StringVar()
         self.st_times = tk.StringVar(value="1")
         self.st_wait = tk.StringVar(value="1")
@@ -1509,7 +1716,7 @@ class App:
         e4 = ttk.Entry(r2, textvariable=self.st_amount, width=3)
         e4.pack(side="left")
         L(r2, "格").pack(side="left", padx=(4, 0))
-        ttk.Button(r2, text="套用", command=self.apply_step).pack(side="right")
+        RoundBtn(r2, text="套用", command=self.apply_step, kind="white").pack(side="right")
         for w in (e1, e2, e3, e4):  # 改完自動套用＋自動存檔
             w.bind("<Return>", lambda e: self.apply_step())
             w.bind("<FocusOut>", lambda e: self.apply_step(quiet=True))
@@ -1519,12 +1726,12 @@ class App:
         b1 = row(c, (8, 2))
         for i, (t, cmd) in enumerate((("📋 建立購買範本", self.buy_template), ("➕ 點擊步驟", self.add_step),
                                       ("➕ 滾動步驟", self.add_scroll), ("🗑 刪除", self.del_step))):
-            ttk.Button(b1, text=t, command=cmd, style="Accent.TButton" if i == 0 else "TButton").grid(row=0, column=i, sticky="we", padx=2)
+            RoundBtn(b1, text=t, command=cmd, style="Accent.TButton" if i == 0 else None).grid(row=0, column=i, sticky="we", padx=2)
             b1.columnconfigure(i, weight=1)
         b2 = row(c, 2)
         for i, (t, cmd) in enumerate((("🎯 選位置", self.pick_step), ("🎯 依序選全部", self.pick_all),
                                       ("↑ 上移", lambda: self.move_step(-1)), ("↓ 下移", lambda: self.move_step(1)))):
-            ttk.Button(b2, text=t, command=cmd).grid(row=0, column=i, sticky="we", padx=2)
+            RoundBtn(b2, text=t, command=cmd).grid(row=0, column=i, sticky="we", padx=2)
             b2.columnconfigure(i, weight=1)
         lbl(c, "選中步驟後，把滑鼠移到目標上按 F8 也能記錄位置；滾動步驟的位置＝要捲的清單上。", "Muted.TLabel",
             wraplength=WRAP(), justify="left").pack(anchor="w", pady=(6, 0))
@@ -1544,9 +1751,9 @@ class App:
         lbl(r, "分鐘").pack(side="left")
         self.vbnow = tk.BooleanVar(value=self.s.get("buy_now", True))
         ttk.Checkbutton(c, text="按開始時立刻先買一次", variable=self.vbnow).pack(anchor="w", pady=(2, 8))
-        self.bbtn = HoverButton(c, "▶  開始自動購買  (F10)", self.toggle_buy, P["sky"], P["sky_h"])
+        self.bbtn = RoundBtn(c, "▶  開始自動購買  (F10)", self.toggle_buy, kind="sky", big=True)
         self.bbtn.pack(fill="x")
-        ttk.Button(c, text="立即買一次（測試）", command=self.buy_once).pack(fill="x", pady=(8, 0))
+        RoundBtn(c, text="立即買一次（測試）", command=self.buy_once).pack(fill="x", pady=(8, 0))
         self.bstatus = lbl(c, "已停止", "Info.TLabel", wraplength=WRAP())
         self.bstatus.pack(anchor="w", pady=(8, 0))
         lbl(c, "開始前「物品」視窗要先關著，遊戲畫面不要被擋住。", "Muted.TLabel").pack(anchor="w")
@@ -1804,7 +2011,7 @@ class App:
                         fg="#7CF0A6" if on else "#C9CEDC")
         self.bglbl.config(text=self.bg.state if self.bg.running() or self.bg.state != "啟動中…" else "未開啟")
         self.bgbtn.config(text="關閉專用背景視窗" if self.bg.running() else "開啟專用背景視窗（要另外登入）")
-        on_buy_tab = self.nb.select() == str(self.buy_tab)
+        on_buy_tab = self.cur_tab == 1
         for vk in (VK_F8, VK_F9, VK_F10):
             down = bool(user32.GetAsyncKeyState(vk) & 0x8000)
             if down and not self._keys[vk]:

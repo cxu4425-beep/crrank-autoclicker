@@ -139,7 +139,7 @@ footer{border-top:1px solid var(--line);padding:28px 0 40px;color:var(--muted);f
 <main class="wrap">
   <div class="hero">
     <div>
-      <span class="pill">目前版本 <b id="cur-ver">v2.0</b> · 免費、開源</span>
+      <span class="pill">目前版本 <b id="cur-ver">v2.1</b> · 免費、開源</span>
       <h1>知識領土的<span class="hl">自動收成</span>小幫手</h1>
       <p class="lead">定時幫你點「收成」、補貨時自動買商店的東西。電腦、Android、iPhone 都能用，設定一次就能一直掛著。</p>
       <div class="dl">
@@ -254,6 +254,8 @@ footer{border-top:1px solid var(--line);padding:28px 0 40px;color:var(--muted);f
       <p>手機的瀏覽器在鎖定畫面或切到別的 App 時會暫停，請讓螢幕保持亮著、遊戲分頁留在前面（可以把亮度調低省電）。</p></details>
     <details class="faq"><summary>能量提醒要怎麼發到 Discord？</summary>
       <p>在你的 Discord 伺服器：頻道設定 → 整合 → Webhook → 新 Webhook → 複製網址，貼到面板「⚙️ 領取與提醒」的 Discord Webhook 欄位，按「測試通知」確認。iPhone 的 Safari 不支援網頁通知，建議用這個方式。Webhook 網址只存在你自己的瀏覽器裡，不要分享給別人。</p></details>
+    <details class="faq"><summary>每次遙控都要掃 QR Code 嗎？（v2.1）</summary>
+      <p>不用。掃一次就會記在手機上，之後直接打開遙控頁面（建議「加到主畫面」）就會自動連上；可以記好幾台、在最上面切換，也能改名、刪除。Android App 在「📱 手機/遙控」分頁按「🖥 打開遙控電腦」就好，也可以貼上電腦版「🔗 複製連結」的連結加入。</p></details>
     <details class="faq"><summary>遠端遙控安全嗎？畫面會被別人看到嗎？（v2.0）</summary>
       <p>指令和畫面經公共 MQTT 中繼伺服器（broker.emqx.io）轉送，但全部用 AES-256-GCM 加密，金鑰只存在 QR Code 連結的 # 後面，瀏覽器不會把它傳到任何伺服器，中繼伺服器看不到內容。畫面只在遙控頁面開著時才傳。連結等於遙控器，不要分享；外流的話在程式裡按「🔄 換新連結」，舊的就失效。不想用可以取消勾選「允許遠端遙控」。</p></details>
     <details class="faq"><summary>自動判斷每小時產量要怎麼用？（v1.9）</summary>
@@ -279,7 +281,19 @@ footer{border-top:1px solid var(--line);padding:28px 0 40px;color:var(--muted);f
     <div class="log">
 
       <div class="ver latest">
-        <h3>v2.0 <span class="date">2026-11-25</span> <span class="badge">最新</span></h3>
+        <h3>v2.1 <span class="date">2026-11-26</span> <span class="badge">最新</span></h3>
+        <p class="sum">記住電腦，遙控不用每次掃 QR Code。</p>
+        <ul>
+          <li>🖥 遙控頁面會記住掃過的電腦，之後直接打開就自動連上；可以記好幾台、切換、改名、刪除，自動顯示電腦名稱</li>
+          <li>📲 遙控頁面可以「加到主畫面」，像 App 一樣有自己的圖示</li>
+          <li>🤖 Android App 新增「🖥 打開遙控電腦」，記住的電腦存在 App 裡；可以從剪貼簿貼上連結加入，或掃 QR Code 時選用 App 開啟</li>
+          <li>🔒 掃描後會把金鑰從網址列清掉，比較不會不小心分享出去</li>
+        </ul>
+        <div class="rels"><a href="https://github.com/cxu4425-beep/crrank-autoclicker/releases/tag/v2.1">查看 v2.1 →</a><a class="src" href="https://github.com/cxu4425-beep/crrank-autoclicker/releases/download/v2.1/source-code.txt">📄 原始碼 txt</a><a class="src" href="https://github.com/cxu4425-beep/crrank-autoclicker/archive/refs/tags/v2.1.zip">📦 原始碼 zip</a></div>
+      </div>
+
+      <div class="ver">
+        <h3>v2.0 <span class="date">2026-11-25</span></h3>
         <p class="sum">遠端遙控不用同一個 Wi-Fi，還看得到實時畫面。</p>
         <ul>
           <li>🌍 手機掃「🌍 遠端遙控」的 QR Code，4G／5G 或別的 Wi-Fi 都能遙控電腦或 Android：開始／停止、點一下、改間隔、自動判斷、自動購買</li>

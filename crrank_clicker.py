@@ -17,7 +17,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from tkinter import filedialog, messagebox, ttk
 
 APP_NAME = "CR Rank 自動收成器"
-APP_VERSION = "2.0"
+APP_VERSION = "2.1"
 REPO = "cxu4425-beep/crrank-autoclicker"
 GAME_URL = "https://crrank.xpgs25.com/game"
 
@@ -1389,7 +1389,8 @@ class RemoteLink:
     def status(self):
         a = self.app
         st = dict(a.clicker.status())
-        st.update(ver=APP_VERSION, auto_rate=bool(a.s.get("auto_rate")), buy=a.buyer.running,
+        st.update(ver=APP_VERSION, name=os.environ.get("COMPUTERNAME") or socket.gethostname() or "電腦",
+                  auto_rate=bool(a.s.get("auto_rate")), buy=a.buyer.running,
                   buy_text=a.buyer.status(), smart=bool(a.smart_used), ts=int(time.time() * 1000))
         rs = a.rate_state if a.rate_ok else None
         if rs:
@@ -2061,7 +2062,7 @@ class App:
 
         # ---- 手機分頁：遠端遙控（任何網路） ----
         c = card(ph, "🌍 遠端遙控（不用同一個 Wi-Fi）",
-                 "用手機相機掃描，4G／5G或別的Wi-Fi都能遙控，還看得到電腦的實時畫面（紅圈＝會點的位置）。")
+                 "用手機相機掃描一次就會記住，之後直接打開遙控頁面就好。4G／5G或別的Wi-Fi都能遙控，還看得到電腦的實時畫面（紅圈＝會點的位置）。")
         qbox = tk.Frame(c, bg="#FFFFFF", highlightbackground=P["line"], highlightthickness=1, padx=8, pady=8)
         qbox.pack(pady=6)  # QR Code 保持方形白底，手機比較好掃
         self.rqr = tk.Canvas(qbox, width=240, height=240, bg="white", highlightthickness=0)

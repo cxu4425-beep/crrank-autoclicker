@@ -842,7 +842,28 @@ public class MainActivity extends Activity {
     private View buildPhoneTab() {
         LinearLayout p = page();
         final Remote rm = Remote.get(e);
-        p.addView(label("🌍 遠端遙控（不用同一個 Wi-Fi）", 16, true));
+        p.addView(label("🖥 遙控電腦", 16, true));
+        p.addView(hint("用這支手機遙控電腦（任何網路）。電腦只要加入一次就會記住，之後按下面的按鈕就自動連上，不用每次掃 QR Code。"));
+        p.addView(primary("🖥 打開遙控電腦", C_YEL, v -> startActivity(new Intent(this, RemoteActivity.class))));
+        p.addView(btn("📋 從剪貼簿加入電腦（貼上電腦版「🔗 複製連結」）", v -> {
+            ClipboardManager cm = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+            CharSequence t = null;
+            try {
+                if (cm.hasPrimaryClip() && cm.getPrimaryClip().getItemCount() > 0)
+                    t = cm.getPrimaryClip().getItemAt(0).coerceToText(this);
+            } catch (Exception ignored) {
+            }
+            String s = t == null ? "" : t.toString().trim();
+            if (!s.contains("remote.html#")) {
+                Toast.makeText(this, "剪貼簿裡沒有遠端遙控連結。先在電腦版按「🔗 複製連結」，傳到手機後複製。", Toast.LENGTH_LONG).show();
+                return;
+            }
+            startActivity(new Intent(this, RemoteActivity.class).putExtra("link", s));
+        }));
+        p.addView(hint("也可以用手機相機掃電腦上的 QR Code，選「用 CR Rank 自動收成開啟」，就會加進來。"));
+        p.addView(sep());
+
+        p.addView(label("🌍 遠端遙控這支手機（不用同一個 Wi-Fi）", 16, true));
         p.addView(hint("用另一支手機或電腦掃描，4G／5G 或別的 Wi-Fi 都能遙控，還看得到這支手機的實時畫面（紅圈＝會點的位置，需要 Android 11 以上）。"));
         rqr = new ImageView(this);
         rqr.setScaleType(ImageView.ScaleType.FIT_CENTER);

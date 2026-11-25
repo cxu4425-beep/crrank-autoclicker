@@ -28,6 +28,22 @@
         </activity>
 
         <activity
+            android:name=".RemoteActivity"
+            android:exported="true"
+            android:label="遙控電腦"
+            android:theme="@android:style/Theme.Material.Light.NoActionBar"
+            android:launchMode="singleTask"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="cxu4425-beep.github.io"
+                    android:pathPrefix="/crrank-autoclicker/remote.html" />
+            </intent-filter>
+        </activity>
+
+        <activity
             android:name=".GameActivity"
             android:exported="false"
             android:label="@string/game_title"

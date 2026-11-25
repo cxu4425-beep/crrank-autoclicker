@@ -14,6 +14,7 @@ FILES = [
     "README.md",
     "docs/index.html",
     "docs/remote.html",
+    "docs/remote.webmanifest",
     ".gitignore",
     "android/build.ps1",
     "android/AndroidManifest.xml",

@@ -309,7 +309,7 @@ public final class Remote {
                     .put("interval", Engine.fmt(e.interval)).put("unit", e.unit).put("x", e.x).put("y", e.y)
                     .put("ver", e.appVersion()).put("auto_rate", e.autoRate).put("smart", e.smartUsed)
                     .put("buy", e.buyRunning).put("buy_text", e.buyStatus()).put("ts", System.currentTimeMillis())
-                    .put("android", true);
+                    .put("android", true).put("name", android.os.Build.MODEL);
             GameReader.Rates r = e.lastRates;
             String rate;
             if (!e.autoRate) rate = "自動判斷已關閉";

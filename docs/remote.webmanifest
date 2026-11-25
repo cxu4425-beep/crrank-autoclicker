@@ -1,0 +1,24 @@
+{
+ "name": "CR Rank 遠端遙控",
+ "short_name": "CR遙控",
+ "display": "standalone",
+ "background_color": "#F4F1EA",
+ "theme_color": "#1E2230",
+ "icons": [
+  {
+   "src": "remote-icon-192.png",
+   "sizes": "192x192",
+   "type": "image/png"
+  },
+  {
+   "src": "remote-icon-512.png",
+   "sizes": "512x512",
+   "type": "image/png"
+  },
+  {
+   "src": "remote-icon.svg",
+   "sizes": "any",
+   "type": "image/svg+xml"
+  }
+ ]
+}

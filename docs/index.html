@@ -139,7 +139,7 @@ footer{border-top:1px solid var(--line);padding:28px 0 40px;color:var(--muted);f
 <main class="wrap">
   <div class="hero">
     <div>
-      <span class="pill">目前版本 <b id="cur-ver">v1.8.1</b> · 免費、開源</span>
+      <span class="pill">目前版本 <b id="cur-ver">v1.9</b> · 免費、開源</span>
       <h1>知識領土的<span class="hl">自動收成</span>小幫手</h1>
       <p class="lead">定時幫你點「收成」、補貨時自動買商店的東西。電腦、Android、iPhone 都能用，設定一次就能一直掛著。</p>
       <div class="dl">
@@ -174,7 +174,7 @@ footer{border-top:1px solid var(--line);padding:28px 0 40px;color:var(--muted);f
     <h2>功能</h2>
     <p class="sec-lead">兩種點法都有：照螢幕位置點（像真的滑鼠），或直接在網頁裡找到按鈕點。</p>
     <div class="grid">
-      <div class="card"><div class="ic">🌾</div><h3>自動收成＋聰明間隔</h3><p>自訂間隔、隨機誤差、次數上限；或開「聰明間隔」，依每小時產量在金幣／建材快滿（90%）前才收，不浪費也不亂點。</p></div>
+      <div class="card"><div class="ic">🌾</div><h3>自動判斷產量收成</h3><p>自己讀遊戲畫面上的每小時產量和還沒收的數量，在金幣／建材快滿（90%）前收，產量變了也跟著變，不用手動輸入。也能自訂固定間隔。</p></div>
       <div class="card"><div class="ic">🎁</div><h3>自動領取</h3><p>定時打開任務視窗，把任務、成就、Discord 每日補給能領的「領取」都按掉，不會按「跳過」。</p></div>
       <div class="card"><div class="ic">🔔</div><h3>能量快滿提醒</h3><p>能量到你設定的百分比就通知你回來答題：瀏覽器通知、Android 系統通知，或發到你的 Discord 頻道。</p></div>
       <div class="card"><div class="ic">🎯</div><h3>自訂點擊位置</h3><p>在螢幕上點一下就記住位置，電腦版也能把滑鼠移過去按 F8 記錄。</p></div>
@@ -254,6 +254,8 @@ footer{border-top:1px solid var(--line);padding:28px 0 40px;color:var(--muted);f
       <p>手機的瀏覽器在鎖定畫面或切到別的 App 時會暫停，請讓螢幕保持亮著、遊戲分頁留在前面（可以把亮度調低省電）。</p></details>
     <details class="faq"><summary>能量提醒要怎麼發到 Discord？</summary>
       <p>在你的 Discord 伺服器：頻道設定 → 整合 → Webhook → 新 Webhook → 複製網址，貼到面板「⚙️ 領取與提醒」的 Discord Webhook 欄位，按「測試通知」確認。iPhone 的 Safari 不支援網頁通知，建議用這個方式。Webhook 網址只存在你自己的瀏覽器裡，不要分享給別人。</p></details>
+    <details class="faq"><summary>自動判斷每小時產量要怎麼用？（v1.9）</summary>
+      <p>電腦版預設就開著：在 Chrome／Edge（或安裝成 App 的視窗）打開知識領土就好，不用登入、不用裝東西。程式會透過 Windows 的輔助功能介面讀畫面上的「+產量/時」和「收成 +x/y」，每次收完自動算下一次。Android 要把無障礙服務關掉再打開一次，讓它可以讀取畫面文字。讀不到遊戲時會改用你設定的固定間隔。</p></details>
     <details class="faq"><summary>聰明間隔是怎麼算的？</summary>
       <p>遊戲上方的金幣、建材會寫「每小時產出」，沒收成的產出最多累積金幣 2000、建材 1500，滿了就停產。聰明間隔會算哪一種先到 90%，在那之前收一次（例如每小時 2577 金幣 → 約 41 分鐘）。</p></details>
     <details class="faq"><summary>第一次用自動購買要怎麼確認設定對不對？</summary>
@@ -275,7 +277,19 @@ footer{border-top:1px solid var(--line);padding:28px 0 40px;color:var(--muted);f
     <div class="log">
 
       <div class="ver latest">
-        <h3>v1.8.1 <span class="date">2026-11-25</span> <span class="badge">最新</span></h3>
+        <h3>v1.9 <span class="date">2026-11-25</span> <span class="badge">最新</span></h3>
+        <p class="sum">自動判斷每小時產量，不用再手動輸入。</p>
+        <ul>
+          <li>🤖 電腦版定點連點會自己讀你開著的知識領土分頁（Chrome／Edge／App 視窗都可以，不用登入、不用擴充功能），看每小時產量和還沒收的數量</li>
+          <li>⏱ 每次收完自動算下一次：在金幣或建材快滿（90%）前收，產量升級後也會跟著變</li>
+          <li>📱 Android 定點連點也一樣，透過無障礙服務讀遊戲畫面（更新後要把無障礙服務關掉再打開一次）</li>
+          <li>↩️ 讀不到遊戲時自動改用你設定的固定間隔；倒數超過 2 分鐘改成顯示「分 秒」</li>
+        </ul>
+        <div class="rels"><a href="https://github.com/cxu4425-beep/crrank-autoclicker/releases/tag/v1.9">查看 v1.9 →</a><a class="src" href="https://github.com/cxu4425-beep/crrank-autoclicker/releases/download/v1.9/source-code.txt">📄 原始碼 txt</a><a class="src" href="https://github.com/cxu4425-beep/crrank-autoclicker/archive/refs/tags/v1.9.zip">📦 原始碼 zip</a></div>
+      </div>
+
+      <div class="ver">
+        <h3>v1.8.1 <span class="date">2026-11-25</span></h3>
         <p class="sum">電腦版介面改成和手機版同一個風格。</p>
         <ul>
           <li>🎨 電腦版改用手機版的設計：深色標題列裡的膠囊分頁、圓角白色卡片、圓角按鈕</li>

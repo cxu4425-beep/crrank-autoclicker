@@ -4,6 +4,7 @@ import ctypes
 import json
 import os
 import random
+import re
 import secrets
 import socket
 import sys
@@ -16,7 +17,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from tkinter import filedialog, messagebox, ttk
 
 APP_NAME = "CR Rank 自動收成器"
-APP_VERSION = "1.8.1"
+APP_VERSION = "1.9"
 REPO = "cxu4425-beep/crrank-autoclicker"
 GAME_URL = "https://crrank.xpgs25.com/game"
 
@@ -87,7 +88,7 @@ SETTINGS_FILE = os.path.join(app_dir(), "crrank_clicker_settings.json")
 DEFAULTS = {"x": 0, "y": 0, "interval": 60, "unit": "秒", "jitter": 0,
             "limit": 0, "restore": True, "click_now": True, "port": 8765,
             "buy_mode": "restock", "buy_every": 30, "buy_offset": 10, "buy_now": True,
-            "buy_slot": 0, "buy_rotate": False}
+            "buy_slot": 0, "buy_rotate": False, "auto_rate": True}
 NUM_SLOTS = 3
 
 
@@ -450,6 +451,7 @@ class Clicker:
         self.thread = None
         self.lock = threading.Lock()
         self.on_change = lambda: None
+        self.smart_fn = None
 
     def interval_sec(self):
         return max(0.1, float(self.s["interval"]) * UNIT_SEC.get(self.s["unit"], 1))
@@ -488,13 +490,19 @@ class Clicker:
                 self.running = False
                 self.on_change()
                 return
-            self.next_at = time.time() + self._wait()
+            self.next_at = time.time() + 5
+            self.next_at = time.time() + self._wait(after_click=True)
             if self.stop_evt.wait(max(0, self.next_at - time.time())):
                 return
 
-    def _wait(self):
+    def _wait(self, after_click=False):
         j = float(self.s.get("jitter") or 0)
-        return max(0.1, self.interval_sec() + (random.uniform(-j, j) if j else 0))
+        base = None
+        if self.s.get("auto_rate") and self.smart_fn:
+            base = self.smart_fn(after_click)  # 自動判斷：讀遊戲畫面算出快滿前的時間
+        if base is None:
+            base = self.interval_sec()
+        return max(0.1, base + (random.uniform(-j, j) if j else 0))
 
     def status(self):
         return {"running": self.running, "count": self.count, "x": self.s["x"], "y": self.s["y"],
@@ -653,6 +661,204 @@ def smart_interval_minutes(gold_rate, mat_rate, gold_cap=2000, mat_cap=1500, rat
     """依每小時產量算出「快滿（90%）之前」的收成間隔（分鐘）。"""
     hours = [cap * ratio / rate for cap, rate in ((gold_cap, gold_rate), (mat_cap, mat_rate)) if rate > 0]
     return max(1, int(min(hours) * 60)) if hours else None
+
+
+
+# ---------- 自動判斷每小時產量：直接讀你開著的遊戲分頁（Windows 輔助功能介面，不用登入、不用擴充功能） ----------
+_IACC = None
+
+
+def _iaccessible():
+    global _IACC
+    if _IACC is None:
+        from ctypes import POINTER, c_int
+        from comtypes import BSTR, COMMETHOD, GUID, HRESULT, dispid
+        from comtypes.automation import IDispatch, VARIANT
+
+        class IAccessible(IDispatch):
+            _iid_ = GUID("{618736E0-3C3D-11CF-810C-00AA00389B71}")
+            _methods_ = [
+                COMMETHOD([dispid(-5000), "hidden", "propget"], HRESULT, "accParent",
+                          (["out", "retval"], POINTER(POINTER(IDispatch)), "p")),
+                COMMETHOD([dispid(-5001), "hidden", "propget"], HRESULT, "accChildCount",
+                          (["out", "retval"], POINTER(c_int), "p")),
+                COMMETHOD([dispid(-5002), "hidden", "propget"], HRESULT, "accChild",
+                          (["in"], VARIANT, "v"), (["out", "retval"], POINTER(POINTER(IDispatch)), "p")),
+                COMMETHOD([dispid(-5003), "hidden", "propget"], HRESULT, "accName",
+                          (["in", "optional"], VARIANT, "v"), (["out", "retval"], POINTER(BSTR), "p")),
+                COMMETHOD([dispid(-5004), "hidden", "propget"], HRESULT, "accValue",
+                          (["in", "optional"], VARIANT, "v"), (["out", "retval"], POINTER(BSTR), "p")),
+                COMMETHOD([dispid(-5005), "hidden", "propget"], HRESULT, "accDescription",
+                          (["in", "optional"], VARIANT, "v"), (["out", "retval"], POINTER(BSTR), "p")),
+            ]
+        _IACC = IAccessible
+    return _IACC
+
+
+def game_num(t):
+    t = str(t).replace(",", "").strip()
+    mul = 1
+    if t[-1:] in ("k", "K"):
+        mul, t = 1e3, t[:-1]
+    elif t[-1:] in ("m", "M"):
+        mul, t = 1e6, t[:-1]
+    elif t[-1:] == "萬":
+        mul, t = 1e4, t[:-1]
+    return float(t) * mul
+
+
+_RE_RATE = re.compile(r"(金幣|建材)・每小時產出\s*([\d,.]+[kKmM萬]?)(?:.*?累積到\s*([\d,.]+[kKmM萬]?))?")
+_RE_PEND = re.compile(r"收成\s*\+\s*([\d,.]+[kKmM萬]?)\s*/\s*([\d,.]+[kKmM萬]?)")
+
+
+def parse_game_texts(texts):
+    """從畫面文字找出每小時產量、上限和還沒收成的數量。"""
+    st = {}
+    for t in texts:
+        m = _RE_RATE.search(t)
+        if m:
+            key = "gold" if m.group(1) == "金幣" else "mat"
+            cap = game_num(m.group(3)) if m.group(3) else (2000 if key == "gold" else 1500)
+            st.setdefault(key, {"rate": game_num(m.group(2)), "cap": cap})
+            continue
+        m = _RE_PEND.search(t)
+        if m and "pending" not in st:
+            st["pending"] = (game_num(m.group(1)), game_num(m.group(2)))
+    return st if ("gold" in st or "mat" in st) else None
+
+
+BROWSER_EXES = ("chrome.exe", "msedge.exe", "brave.exe", "opera.exe", "vivaldi.exe")
+
+
+def _chromium_pages():
+    """找所有 Chrome／Edge 視窗（含安裝成 App 的網頁），名字像知識領土的排前面。"""
+    import ctypes.wintypes as wt
+    k32 = ctypes.windll.kernel32
+    found = []
+
+    def cls_of(h):
+        b = ctypes.create_unicode_buffer(64)
+        user32.GetClassNameW(h, b, 64)
+        return b.value
+
+    @ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+    def top(h, l):
+        if cls_of(h) != "Chrome_WidgetWin_1" or not user32.IsWindowVisible(h):
+            return True
+        title = ctypes.create_unicode_buffer(512)
+        user32.GetWindowTextW(h, title, 512)
+        pid = wt.DWORD()
+        user32.GetWindowThreadProcessId(h, ctypes.byref(pid))
+        exe = ""
+        hp = k32.OpenProcess(0x1000, 0, pid)
+        if hp:
+            buf, n = ctypes.create_unicode_buffer(300), wt.DWORD(300)
+            if k32.QueryFullProcessImageNameW(hp, 0, buf, ctypes.byref(n)):
+                exe = os.path.basename(buf.value).lower()
+            k32.CloseHandle(hp)
+        if exe not in BROWSER_EXES:
+            return True
+        t = title.value
+        pri = 0 if ("知識領土" in t or "CR Rank" in t) else (2 if user32.IsIconic(h) else 1)
+        found.append((pri, t, h))  # 直接讀整個視窗（Chrome 會自動打開網頁的輔助功能樹）
+        return True
+
+    user32.EnumWindows(top, 0)
+    found.sort(key=lambda f: f[0])
+    return found
+
+
+def _acc_texts(hwnd, budget=4.0, limit=6000):
+    from comtypes.automation import VARIANT
+    IAcc = _iaccessible()
+    oleacc = ctypes.oledll.oleacc
+    p = ctypes.POINTER(IAcc)()
+    oleacc.AccessibleObjectFromWindow(ctypes.c_void_p(hwnd), ctypes.c_long(-4), ctypes.byref(IAcc._iid_), ctypes.byref(p))
+    out, end, stack = [], time.time() + budget, [p]
+    me = VARIANT(0)
+    while stack and len(out) < limit and time.time() < end:
+        a = stack.pop()
+        for get in ("accName", "accDescription"):
+            try:
+                v = getattr(a, get)(me)
+                if v:
+                    out.append(v)
+            except Exception:
+                pass
+        try:
+            n = a.accChildCount
+        except Exception:
+            n = 0
+        if n:
+            arr, got = (VARIANT * n)(), ctypes.c_long()
+            try:
+                oleacc.AccessibleChildren(a, 0, n, arr, ctypes.byref(got))
+            except Exception:
+                continue
+            kids = []
+            for i in range(got.value):
+                v = arr[i].value
+                if v is None or isinstance(v, int):
+                    continue
+                try:
+                    kids.append(v.QueryInterface(IAcc))
+                except Exception:
+                    pass
+            stack.extend(reversed(kids))  # 保持文件順序
+        if any("每小時產出" in t for t in out) and any(_RE_PEND.search(t) for t in out):
+            break
+    return out
+
+
+def read_game_state():
+    """讀取開著的知識領土分頁：每小時產量、上限、還沒收成的數量。找不到回傳 None。"""
+    try:
+        import comtypes
+        comtypes.CoInitialize()
+    except Exception:
+        return None
+    t_end = time.time() + 8
+    for pri, title, hwnd in _chromium_pages():
+        if time.time() > t_end:
+            break
+        try:
+            st = parse_game_texts(_acc_texts(hwnd, budget=4.0 if pri == 0 else 1.5))
+        except Exception:
+            st = None
+        if st:
+            st["where"] = title
+            st["at"] = time.time()
+            return st
+    return None
+
+
+def smart_wait_seconds(st, ratio=0.9):
+    """離「金幣或建材快滿（90%）」還有幾秒；最少 1 分鐘、最多 6 小時。"""
+    if not st:
+        return None
+    pg, pm = st.get("pending") or (0, 0)
+    hours = []
+    for key, pend in (("gold", pg), ("mat", pm)):
+        r = st.get(key)
+        if r and r["rate"] > 0 and r["cap"] > 0:
+            hours.append((r["cap"] * ratio - pend) / r["rate"])
+    if not hours:
+        return None
+    return max(60.0, min(6 * 3600.0, min(hours) * 3600))
+
+
+def describe_state(st):
+    if not st:
+        return ""
+    parts = []
+    for key, name in (("gold", "金幣"), ("mat", "建材")):
+        r = st.get(key)
+        if r:
+            parts.append(f"{name} +{int(r['rate'])}/時")
+    s = "、".join(parts)
+    if st.get("pending"):
+        s += f"，未收 {int(st['pending'][0])}/{int(st['pending'][1])}"
+    return s
 
 
 EXT_BACKGROUND_JS = r"""
@@ -1252,12 +1458,16 @@ class App:
         self.root.geometry(f"{int(560 * UI_K)}x{min(int(800 * UI_K), self.root.winfo_screenheight() - 90)}")
         self.root.minsize(int(520 * UI_K), int(520 * UI_K))
         self.clicker.on_change = lambda: self.root.after(0, self.refresh_btn)
+        self.clicker.smart_fn = self.smart_wait
+        self.rate_state, self.rate_ok, self.rate_checked, self.smart_used = None, None, 0, False
         self.buyer = BuyRunner(self.s)
         self.buyer.on_change = lambda: self.root.after(0, self.refresh_buy)
         self.bg = BgBrowser()
         self.server = None
         self.url = ""
         self.build_ui()
+        self.refresh_rate_lbl()
+        threading.Thread(target=self.rate_watch, daemon=True).start()
         t = self.s.get("tab", 0)
         self.show_tab(t if t in (0, 1, 2) else 0)
         self.start_server()
@@ -1283,8 +1493,9 @@ class App:
         ttk.Label(f, justify="left", wraplength=320, text=(
             "把滑鼠移到遊戲上方的金幣、建材上，會看到「每小時產出 ___」。\n"
             "沒收成的產出最多累積金幣 2000、建材 1500，滿了就停產；這裡會算出快滿（90%）之前收一次的間隔。")).grid(row=0, column=0, columnspan=2, sticky="w")
-        vg = tk.StringVar(value=str(self.s.get("rate_gold", "")))
-        vm = tk.StringVar(value=str(self.s.get("rate_mat", "")))
+        rs = self.rate_state or {}
+        vg = tk.StringVar(value=str(int(rs["gold"]["rate"]) if rs.get("gold") else self.s.get("rate_gold", "")))
+        vm = tk.StringVar(value=str(int(rs["mat"]["rate"]) if rs.get("mat") else self.s.get("rate_mat", "")))
         ttk.Label(f, text="金幣 每小時產出").grid(row=1, column=0, sticky="e", pady=(8, 0))
         ttk.Entry(f, textvariable=vg, width=10).grid(row=1, column=1, sticky="w", pady=(8, 0))
         ttk.Label(f, text="建材 每小時產出").grid(row=2, column=0, sticky="e")
@@ -1463,8 +1674,18 @@ class App:
         RoundBtn(r, text="測試點一下", command=self.test_click).pack(side="left", fill="x", expand=True, padx=(8, 0))
         lbl(c, "或把滑鼠移到「收成」按鈕上按 F8 記錄", "Muted.TLabel").pack(anchor="w")
 
+        # ---- 自動判斷產量 ----
+        c = card(pc, "🤖 自動判斷每小時產量",
+                 "直接讀你開著的知識領土分頁，算出金幣或建材快滿（90%）前收成。產量變了會跟著變，不用手動輸入。")
+        self.vauto_rate = tk.BooleanVar(value=self.s.get("auto_rate", True))
+        r = row(c)
+        ttk.Checkbutton(r, text="自動判斷收成時間", variable=self.vauto_rate, command=self.set_auto_rate).pack(side="left")
+        RoundBtn(r, text="🔍 立即讀取", command=lambda: threading.Thread(target=self.read_rates, daemon=True).start()).pack(side="right")
+        self.rate_lbl = lbl(c, "讀取中…", "Muted.TLabel", wraplength=WRAP(), justify="left")
+        self.rate_lbl.pack(anchor="w", pady=(4, 0))
+
         # ---- 間隔 ----
-        c = card(pc, "⏱ 間隔與選項")
+        c = card(pc, "⏱ 間隔與選項", "開著自動判斷時，這個間隔只在讀不到遊戲時使用。")
         r = row(c)
         lbl(r, "每").pack(side="left")
         self.viv = tk.StringVar(value=str(self.s["interval"]))
@@ -1534,6 +1755,62 @@ class App:
         c = card(ph, "📁 檔案")
         RoundBtn(c, text="📁 匯出手機用檔案（腳本、書籤、說明）", command=self.export).pack(fill="x")
         RoundBtn(c, text="在電腦瀏覽器開啟手機頁", command=lambda: webbrowser.open(self.url)).pack(fill="x", pady=(6, 0))
+
+    # ----- 🤖 自動判斷每小時產量 -----
+    def set_auto_rate(self):
+        self.s["auto_rate"] = bool(self.vauto_rate.get())
+        save_settings(self.s)
+        self.refresh_rate_lbl()
+        if self.s["auto_rate"]:
+            threading.Thread(target=self.read_rates, daemon=True).start()
+
+    def read_rates(self):
+        try:
+            st = read_game_state()
+        except Exception:
+            st = None
+        if st:
+            self.rate_state = st
+        self.rate_ok = bool(st)
+        self.rate_checked = time.time()
+        try:
+            self.root.after(0, self.refresh_rate_lbl)
+        except Exception:
+            pass
+        return st
+
+    def smart_wait(self, after_click):
+        """連點每次點完呼叫：等遊戲畫面更新後讀數字，回傳到快滿還有幾秒（讀不到回傳 None）。"""
+        if after_click and self.clicker.stop_evt.wait(2.5):
+            return None
+        sec = smart_wait_seconds(self.read_rates())
+        self.smart_used = sec is not None
+        return sec
+
+    def rate_watch(self):
+        while True:
+            if self.s.get("auto_rate") and not self.clicker.running:
+                self.read_rates()
+            time.sleep(60)
+
+    def refresh_rate_lbl(self):
+        if not self.s.get("auto_rate"):
+            self.rate_lbl.config(text="已關閉：用下面的固定間隔。", style="Muted.TLabel")
+            return
+        if self.rate_ok is None:
+            self.rate_lbl.config(text="讀取中…", style="Muted.TLabel")
+            return
+        st = self.rate_state
+        when = time.strftime("%H:%M:%S", time.localtime(self.rate_checked))
+        if self.rate_ok and st:
+            sec = smart_wait_seconds(st)
+            mins = max(1, int(round(sec / 60))) if sec else 0
+            self.rate_lbl.config(style="Ok.TLabel", text=(
+                f"✔ {describe_state(st)}\n→ 約 {mins} 分鐘後快滿，到時自動收成（{when} 讀取）"))
+        else:
+            self.rate_lbl.config(style="Muted.TLabel", text=(
+                f"找不到遊戲（{when}）：在 Chrome／Edge 打開知識領土並停在那個分頁，視窗不要縮到最小。"
+                "讀不到時會用下面的間隔。"))
 
     def show_tab(self, k):
         self.cur_tab = k
@@ -2004,7 +2281,10 @@ class App:
 
     def poll(self):
         st = self.clicker.status()
-        self.status.config(text=(f"執行中 · 下次 {st['next_in']} 秒" if st["running"] else "已停止") + f" · 已點 {st['count']} 次")
+        nxt = st["next_in"]
+        nxt_s = f"{nxt // 60} 分 {nxt % 60:02d} 秒" if nxt >= 120 else f"{nxt} 秒"
+        auto = " · 🤖 自動判斷" if (self.s.get("auto_rate") and self.smart_used) else ""
+        self.status.config(text=(f"執行中 · 下次 {nxt_s}{auto}" if st["running"] else "已停止") + f" · 已點 {st['count']} 次")
         self.bstatus.config(text=self.buyer.status())
         for chip, name, on in ((self.chip_h, "收成", st["running"]), (self.chip_b, "購買", self.buyer.running)):
             chip.config(text=f"{name} ● {'執行中' if on else '停止'}", bg="#1F5134" if on else "#2D3346",
@@ -2056,4 +2336,9 @@ class App:
 
 if __name__ == "__main__":
     finish_update_if_requested()
+    if len(sys.argv) >= 3 and sys.argv[1] == "--read-game":  # 自我檢查：把讀到的遊戲數字寫到檔案
+        _st = read_game_state()
+        with open(sys.argv[2], "w", encoding="utf-8") as _f:
+            json.dump({"state": _st, "text": describe_state(_st), "wait": smart_wait_seconds(_st)}, _f, ensure_ascii=False)
+        sys.exit(0)
     App().run()

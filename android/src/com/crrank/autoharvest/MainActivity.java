@@ -731,7 +731,26 @@ public class MainActivity extends Activity {
         p.addView(hint("也可以在遊戲畫面上按浮動控制鈕的 🎯 選位置"));
         p.addView(sep());
 
+        p.addView(label("🤖 自動判斷每小時產量", 16, true));
+        p.addView(hint("每次點完收成會讀遊戲畫面上的「+產量/時」和「收成 +x/y」，算出金幣或建材快滿（90%）前再收。"
+                + "產量變了也會跟著變，不用手動輸入。"));
+        CheckBox ar = check("自動判斷收成時間");
+        ar.setChecked(e.autoRate);
+        ar.setOnCheckedChangeListener((v, on) -> {
+            e.autoRate = on;
+            e.save();
+            refresh();
+        });
+        p.addView(ar);
+        rateTxt = hint("");
+        rateTxt.setTextColor(0xFF2A8A4A);
+        p.addView(rateTxt);
+        p.addView(hint("第一次使用（或更新後讀不到）：到無障礙設定把「" + getString(R.string.service_name)
+                + "」關掉再打開一次，讓它可以讀取畫面文字。"));
+        p.addView(sep());
+
         p.addView(label("⏱ 間隔與選項", 16, true));
+        p.addView(hint("開著自動判斷時，這個間隔只在讀不到遊戲時使用。"));
         eiv = num(true);
         sun = new Spinner(this);
         ArrayAdapter<String> ad = new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, Engine.UNITS);
@@ -791,7 +810,7 @@ public class MainActivity extends Activity {
         return p;
     }
 
-    private TextView batTxt;
+    private TextView batTxt, rateTxt;
 
     private boolean ignoringBattery() {
         try {
@@ -966,6 +985,7 @@ public class MainActivity extends Activity {
         }
         boolean ok = e.serviceReady();
         acc.setText(ok ? "✅ 無障礙服務已開啟" : "⚠️ 尚未開啟無障礙服務");
+        if (rateTxt != null) rateTxt.setText(e.rateText());
         if (batTxt != null)
             batTxt.setText(ignoringBattery() ? "✅ 已允許在背景執行（不受省電限制）" : "⚠️ 建議按下面的按鈕允許，不然息屏久了手機省電會讓背景遊戲斷線");
         ((GradientDrawable) accBox.getBackground()).setColor(ok ? 0xFFE3F7E3 : 0xFFFFF4D6);

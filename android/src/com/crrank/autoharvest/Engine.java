@@ -40,6 +40,12 @@ public final class Engine {
     public boolean clickNow, showBubble;
     /** 息屏時改用背景遊戲（網頁面板點按鈕）繼續收成 */
     public boolean offHarvest;
+    /** 自動判斷每小時產量：點完收成後讀遊戲畫面，算出快滿前什麼時候再收 */
+    public boolean autoRate;
+    public volatile GameReader.Rates lastRates;
+    public volatile long lastReadAt;
+    public volatile boolean lastReadOk, smartUsed;
+    private long lastPeriodicRead;
 
     public volatile boolean running;
     public volatile int count;
@@ -59,6 +65,7 @@ public final class Engine {
         clickNow = sp.getBoolean("click_now", true);
         showBubble = sp.getBoolean("bubble", true);
         offHarvest = sp.getBoolean("off_harvest", true);
+        autoRate = sp.getBoolean("auto_rate", true);
         String a = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
         SecureRandom r = new SecureRandom();
         StringBuilder sb = new StringBuilder();
@@ -78,7 +85,8 @@ public final class Engine {
     public void save() {
         sp.edit().putInt("x", x).putInt("y", y).putString("interval", fmt(interval)).putString("unit", unit)
                 .putString("jitter", fmt(jitter)).putInt("limit", limit).putBoolean("click_now", clickNow)
-                .putBoolean("bubble", showBubble).putBoolean("off_harvest", offHarvest).apply();
+                .putBoolean("bubble", showBubble).putBoolean("off_harvest", offHarvest)
+                .putBoolean("auto_rate", autoRate).apply();
     }
 
     public SharedPreferences prefs() {
@@ -134,6 +142,7 @@ public final class Engine {
     private void begin() {
         running = true;
         done = 0;
+        smartUsed = false;
         nextAt = clickNow ? 0 : System.currentTimeMillis() + (long) (waitSec() * 1000);
         ensureWatch();
         changed();
@@ -175,8 +184,14 @@ public final class Engine {
                 tap();
                 done++;
                 if (limit > 0 && done >= limit) running = false;
-                else nextAt = now + (long) (waitSec() * 1000);
+                else {
+                    nextAt = now + (long) (waitSec() * 1000);
+                    if (autoRate) h.postDelayed(() -> readGame(true), 2500);  // 等遊戲畫面更新再讀
+                }
                 changed();
+            } else if (running && autoRate && usable && now - lastPeriodicRead > 60000) {
+                lastPeriodicRead = now;
+                readGame(false);
             }
             if (buyRunning && !buyBusy && buyNextAt > 0 && now >= buyNextAt && usable) {
                 buyNextAt = 0;
@@ -189,6 +204,45 @@ public final class Engine {
     private void ensureWatch() {
         h.removeCallbacks(watch);
         h.post(watch);
+    }
+
+    /**
+     * 讀畫面上的遊戲數字。afterTap＝剛點完收成（還沒收的當作 0）；
+     * 定時讀取只有在讀得到「收成 +x/y」時才調整下次時間。
+     */
+    public void readGame(boolean afterTap) {
+        ClickService s = ClickService.inst;
+        if (s == null) return;
+        GameReader.Rates r = null;
+        try {
+            r = GameReader.read(s);
+        } catch (Exception ignored) {
+        }
+        lastReadAt = System.currentTimeMillis();
+        lastReadOk = r != null;
+        if (r != null) {
+            lastRates = r;
+            double sec = r.smartSec();
+            if (running && sec > 0 && (afterTap || r.hasPending)) {
+                if (jitter > 0) sec += (rnd.nextDouble() * 2 - 1) * jitter;
+                nextAt = lastReadAt + (long) (Math.max(30, sec) * 1000);
+                smartUsed = true;
+            }
+        }
+        changed();
+    }
+
+    public String rateText() {
+        if (!autoRate) return "已關閉：用下面的固定間隔。";
+        if (lastReadAt == 0) return "開始收成後，每次點完會讀遊戲畫面上的產量（遊戲要在畫面上）。";
+        String when = new java.text.SimpleDateFormat("HH:mm:ss", Locale.US).format(new java.util.Date(lastReadAt));
+        GameReader.Rates r = lastRates;
+        if (lastReadOk && r != null) {
+            double sec = r.smartSec();
+            return "✔ " + r.describe() + "\n→ 約 " + GameReader.minutes(sec) + " 分鐘後快滿，到時自動收成（" + when + " 讀取）";
+        }
+        return "這次沒讀到遊戲（" + when + "）：遊戲要停在畫面上。讀不到時用下面的間隔。"
+                + (r != null ? "\n上次讀到：" + r.describe() : "");
     }
 
     /** 螢幕打開／解鎖時呼叫：立刻檢查有沒有過期沒點的。 */
@@ -230,7 +284,9 @@ public final class Engine {
     }
 
     public String statusText() {
-        String s = running ? (waitingScreen ? "執行中 · 等螢幕解鎖後補點" : "執行中 · 下次 " + nextIn() + " 秒") : "已停止";
+        int n = nextIn();
+        String nx = n >= 120 ? (n / 60) + " 分 " + (n % 60) + " 秒" : n + " 秒";
+        String s = running ? (waitingScreen ? "執行中 · 等螢幕解鎖後補點" : "執行中 · 下次 " + nx + (autoRate && smartUsed ? " · 🤖 自動判斷" : "")) : "已停止";
         return s + " · 已點 " + count + " 次";
     }
 

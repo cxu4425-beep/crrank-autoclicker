@@ -139,7 +139,7 @@ footer{border-top:1px solid var(--line);padding:28px 0 40px;color:var(--muted);f
 <main class="wrap">
   <div class="hero">
     <div>
-      <span class="pill">目前版本 <b id="cur-ver">v2.3</b> · 免費、開源</span>
+      <span class="pill">目前版本 <b id="cur-ver">v2.4</b> · 免費、開源</span>
       <h1>知識領土的<span class="hl">自動收成</span>小幫手</h1>
       <p class="lead">定時幫你點「收成」、補貨時自動買商店的東西。電腦、Android、iPhone 都能用，設定一次就能一直掛著。</p>
       <div class="dl">
@@ -254,6 +254,8 @@ footer{border-top:1px solid var(--line);padding:28px 0 40px;color:var(--muted);f
       <p>手機的瀏覽器在鎖定畫面或切到別的 App 時會暫停，請讓螢幕保持亮著、遊戲分頁留在前面（可以把亮度調低省電）。</p></details>
     <details class="faq"><summary>能量提醒要怎麼發到 Discord？</summary>
       <p>在你的 Discord 伺服器：頻道設定 → 整合 → Webhook → 新 Webhook → 複製網址，貼到面板「⚙️ 領取與提醒」的 Discord Webhook 欄位，按「測試通知」確認。iPhone 的 Safari 不支援網頁通知，建議用這個方式。Webhook 網址只存在你自己的瀏覽器裡，不要分享給別人。</p></details>
+    <details class="faq"><summary>遊戲用「在應用程式中開啟」的視窗，也能自動判斷產量嗎？（v2.4）</summary>
+      <p>可以。Chrome 平常會把網頁內容對輔助工具關起來，所以 v2.4 起有三種讀法：① 有裝擴充功能（「🧩 用原本的 Chrome」）最準，分頁和應用程式視窗都會每 30 秒把產量交給程式（只送到你自己電腦的 127.0.0.1）；② Chrome 有打開輔助功能時直接讀網頁；③ 都不行時用 Windows 內建的畫面辨識讀「收成 +x/y」，看它長多快來估算（遊戲視窗被蓋住也可以，但不能縮到最小）。更新程式後記得到 chrome://extensions 按擴充功能的「重新載入」。</p></details>
     <details class="faq"><summary>每次遙控都要掃 QR Code 嗎？（v2.1）</summary>
       <p>不用。掃一次就會記在手機上，之後直接打開遙控頁面（建議「加到主畫面」）就會自動連上；可以記好幾台、在最上面切換，也能改名、刪除。Android App 在「📱 手機/遙控」分頁按「🖥 打開遙控電腦」就好，也可以貼上電腦版「🔗 複製連結」的連結加入。</p></details>
     <details class="faq"><summary>遠端遙控安全嗎？畫面會被別人看到嗎？（v2.0）</summary>
@@ -281,7 +283,19 @@ footer{border-top:1px solid var(--line);padding:28px 0 40px;color:var(--muted);f
     <div class="log">
 
       <div class="ver latest">
-        <h3>v2.3 <span class="date">2026-11-26</span> <span class="badge">最新</span></h3>
+        <h3>v2.4 <span class="date">2026-11-27</span> <span class="badge">最新</span></h3>
+        <p class="sum">「在應用程式中開啟」的遊戲視窗也能自動判斷產量。</p>
+        <ul>
+          <li>🧩 擴充功能每 30 秒把遊戲上的每小時產量交給電腦版（分頁和應用程式視窗都可以），最準</li>
+          <li>👁 沒有擴充功能時改用 Windows 內建的畫面辨識讀「收成 +x/y」估算產量，遊戲視窗被蓋住也讀得到</li>
+          <li>🐛 修正：Chrome 把輔助功能關掉後就一直讀不到；兩個程式同時開時會搶同一個連接埠；長時間執行的小記憶體洩漏</li>
+          <li>🔒 本機傳產量的連線只收擴充功能送來的資料，並檢查數值</li>
+        </ul>
+        <div class="rels"><a href="https://github.com/cxu4425-beep/crrank-autoclicker/releases/tag/v2.4">查看 v2.4 →</a><a class="src" href="https://github.com/cxu4425-beep/crrank-autoclicker/releases/download/v2.4/source-code.txt">📄 原始碼 txt</a><a class="src" href="https://github.com/cxu4425-beep/crrank-autoclicker/archive/refs/tags/v2.4.zip">📦 原始碼 zip</a></div>
+      </div>
+
+      <div class="ver">
+        <h3>v2.3 <span class="date">2026-11-26</span></h3>
         <p class="sum">在手機上點實時畫面，電腦就點同一個位置。</p>
         <ul>
           <li>👆 遙控頁面打開「點擊模式」後，點實時畫面（或放大檢視）上的哪裡，電腦／Android 就在同一點點擊，手機上會有點擊動畫和「已點擊 (x, y)」回報</li>

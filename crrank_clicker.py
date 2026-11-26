@@ -17,7 +17,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from tkinter import filedialog, messagebox, ttk
 
 APP_NAME = "CR Rank 自動收成器"
-APP_VERSION = "2.3"
+APP_VERSION = "2.4"
 REPO = "cxu4425-beep/crrank-autoclicker"
 GAME_URL = "https://crrank.xpgs25.com/game"
 
@@ -131,10 +131,18 @@ def load_settings():
     return s
 
 
+_SAVE_LOCK = threading.Lock()
+
+
 def save_settings(s):
+    """先寫到暫存檔再換掉，好幾個執行緒同時存也不會把設定檔寫壞。"""
     try:
-        with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
-            json.dump(s, f, ensure_ascii=False, indent=2)
+        with _SAVE_LOCK:
+            data = json.dumps(s, ensure_ascii=False, indent=2)
+            tmp = SETTINGS_FILE + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                f.write(data)
+            os.replace(tmp, SETTINGS_FILE)
     except Exception:
         pass
 
@@ -451,7 +459,8 @@ class Clicker:
         self.thread = None
         self.lock = threading.Lock()
         self.on_change = lambda: None
-        self.smart_fn = None
+        self.smart_fn = None      # (after_click, stop_evt) -> 到快滿還有幾秒或 None
+        self.pre_click_fn = None  # (stop_evt) -> 點擊前取樣（畫面辨識估算產量用）
 
     def interval_sec(self):
         return max(0.1, float(self.s["interval"]) * UNIT_SEC.get(self.s["unit"], 1))
@@ -461,8 +470,8 @@ class Clicker:
             if self.running:
                 return
             self.running = True
-            self.stop_evt.clear()
-            self.thread = threading.Thread(target=self._loop, daemon=True)
+            self.stop_evt = threading.Event()  # 每次開始都用新的：上一輪還卡在讀取時也會乖乖結束
+            self.thread = threading.Thread(target=self._loop, args=(self.stop_evt,), daemon=True)
             self.thread.start()
         self.on_change()
 
@@ -476,13 +485,20 @@ class Clicker:
         click_at(self.s["x"], self.s["y"], self.s["restore"])
         self.count += 1
 
-    def _loop(self):
+    def _loop(self, evt):
         done = 0
         if not self.s.get("click_now", True):
-            self.next_at = time.time() + self._wait()
-            if self.stop_evt.wait(self.next_at - time.time()):
+            self.next_at = time.time() + self._wait(evt=evt)
+            if evt.wait(max(0, self.next_at - time.time())):
                 return
-        while not self.stop_evt.is_set():
+        while not evt.is_set():
+            if self.s.get("auto_rate") and self.pre_click_fn:
+                try:
+                    self.pre_click_fn(evt)
+                except Exception:
+                    pass
+                if evt.is_set():
+                    return
             self.once()
             done += 1
             lim = int(self.s.get("limit") or 0)
@@ -491,15 +507,18 @@ class Clicker:
                 self.on_change()
                 return
             self.next_at = time.time() + self.interval_sec()  # 讀遊戲畫面時先顯示原本的間隔
-            self.next_at = time.time() + self._wait(after_click=True)
-            if self.stop_evt.wait(max(0, self.next_at - time.time())):
+            w = self._wait(after_click=True, evt=evt)
+            if evt.is_set():
+                return
+            self.next_at = time.time() + w
+            if evt.wait(max(0, self.next_at - time.time())):
                 return
 
-    def _wait(self, after_click=False):
+    def _wait(self, after_click=False, evt=None):
         j = float(self.s.get("jitter") or 0)
         base = None
         if self.s.get("auto_rate") and self.smart_fn:
-            base = self.smart_fn(after_click)  # 自動判斷：讀遊戲畫面算出快滿前的時間
+            base = self.smart_fn(after_click, evt or self.stop_evt)  # 自動判斷：讀遊戲畫面算出快滿前的時間
         if base is None:
             base = self.interval_sec()
         return max(0.1, base + (random.uniform(-j, j) if j else 0))
@@ -810,15 +829,64 @@ def _acc_texts(hwnd, budget=4.0, limit=6000):
     return out
 
 
-def read_game_state():
+_IA2 = None
+
+
+def wake_chrome(hwnd, deep=True):
+    """叫 Chrome 打開網頁的輔助功能樹。
+
+    Chrome（包含「在應用程式中開啟」的 App 視窗）平常會把它關著，偵測到輔助工具才打開，
+    而且要等幾秒；閒置一陣子又會自己關掉。deep=False 只是輕輕問一下，讓它保持開著。"""
+    global _IA2
+    try:
+        import comtypes
+        from comtypes import GUID, IServiceProvider, IUnknown
+        comtypes.CoInitialize()
+        IAcc = _iaccessible()
+        p = ctypes.POINTER(IAcc)()
+        ctypes.oledll.oleacc.AccessibleObjectFromWindow(ctypes.c_void_p(hwnd), ctypes.c_long(-4),
+                                                        ctypes.byref(IAcc._iid_), ctypes.byref(p))
+        p.accChildCount
+        if deep:
+            if _IA2 is None:
+                class IAccessible2(IUnknown):
+                    _iid_ = GUID("{E89F726E-C4F4-4c19-BB19-B647D7FA8478}")
+                    _methods_ = []
+                _IA2 = IAccessible2
+            try:  # 螢幕閱讀器會要 IAccessible2，Chrome 看到就會打開網頁內容
+                p.QueryInterface(IServiceProvider).QueryService(IAcc._iid_, _IA2)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+
+def chrome_keepalive():
+    """每 20 秒左右呼叫：輕輕問一下遊戲視窗，Chrome 才不會把輔助功能樹關掉（之後讀取就是立即的）。"""
+    try:
+        for pri, title, hwnd in _chromium_pages():
+            if pri < 1:
+                wake_chrome(hwnd, deep=False)
+    except Exception:
+        pass
+
+
+def read_game_state(patience=6):
     """讀取開著的知識領土分頁：每小時產量、上限、還沒收成的數量。找不到回傳 None。"""
     try:
         import comtypes
         comtypes.CoInitialize()
     except Exception:
         return None
+
+    def done(st, title):
+        st["where"] = title
+        st["at"] = time.time()
+        return st
+
+    pages = _chromium_pages()
     t_end = time.time() + 8
-    for pri, title, hwnd in _chromium_pages():
+    for pri, title, hwnd in pages:
         if time.time() > t_end:
             break
         try:
@@ -826,10 +894,210 @@ def read_game_state():
         except Exception:
             st = None
         if st:
-            st["where"] = title
-            st["at"] = time.time()
-            return st
+            return done(st, title)
+    # 有知識領土／CR Rank 的視窗卻讀不到 → Chrome 的輔助功能樹關著：叫醒它，最多等 patience 秒
+    cands = [(t, h) for pri, t, h in pages if pri < 1 and not user32.IsIconic(h)]
+    if not cands or patience <= 0:
+        return None
+    for t, h in cands:
+        wake_chrome(h)
+    end = time.time() + patience
+    while time.time() < end:
+        time.sleep(1)
+        for t, h in cands:
+            try:
+                st = parse_game_texts(_acc_texts(h, budget=2.0))
+            except Exception:
+                st = None
+            if st:
+                return done(st, t)
     return None
+
+
+OCR_PS1 = r"""
+param([string]$img)
+$ErrorActionPreference = "Stop"
+Add-Type -AssemblyName System.Runtime.WindowsRuntime
+$asTask = ([System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object { $_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 -and $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation`1' })[0]
+function Await($op, [Type]$t) { $task = $asTask.MakeGenericMethod($t).Invoke($null, @($op)); $task.Wait(-1) | Out-Null; $task.Result }
+[Windows.Storage.StorageFile,Windows.Storage,ContentType=WindowsRuntime] | Out-Null
+[Windows.Media.Ocr.OcrEngine,Windows.Foundation,ContentType=WindowsRuntime] | Out-Null
+[Windows.Graphics.Imaging.BitmapDecoder,Windows.Graphics,ContentType=WindowsRuntime] | Out-Null
+[Windows.Globalization.Language,Windows.Globalization,ContentType=WindowsRuntime] | Out-Null
+$file = Await ([Windows.Storage.StorageFile]::GetFileFromPathAsync($img)) ([Windows.Storage.StorageFile])
+$stream = Await ($file.OpenAsync([Windows.Storage.FileAccessMode]::Read)) ([Windows.Storage.Streams.IRandomAccessStream])
+$dec = Await ([Windows.Graphics.Imaging.BitmapDecoder]::CreateAsync($stream)) ([Windows.Graphics.Imaging.BitmapDecoder])
+$bmp = Await ($dec.GetSoftwareBitmapAsync()) ([Windows.Graphics.Imaging.SoftwareBitmap])
+$eng = $null
+foreach ($t in @("zh-Hant-TW", "zh-TW", "zh-Hans-CN", "ja-JP")) { try { $eng = [Windows.Media.Ocr.OcrEngine]::TryCreateFromLanguage((New-Object Windows.Globalization.Language($t))) } catch {} ; if ($eng) { break } }
+if (-not $eng) { exit 3 }
+$res = Await ($eng.RecognizeAsync($bmp)) ([Windows.Media.Ocr.OcrResult])
+[Console]::OutputEncoding = [Text.Encoding]::UTF8
+foreach ($l in $res.Lines) { $l.Text }
+"""
+
+
+def print_window(hwnd):
+    """擷取視窗內容（被別的視窗蓋住也可以），回傳 PIL 圖片。"""
+    from PIL import Image
+    import ctypes.wintypes as wt
+    gdi = ctypes.windll.gdi32
+    r = wt.RECT()
+    user32.GetWindowRect(ctypes.c_void_p(hwnd), ctypes.byref(r))
+    w, h = r.right - r.left, r.bottom - r.top
+    if w < 50 or h < 50:
+        return None
+    vp = ctypes.c_void_p
+    user32.GetWindowDC.restype = vp
+    user32.GetWindowDC.argtypes = [vp]
+    user32.ReleaseDC.argtypes = [vp, vp]
+    user32.PrintWindow.argtypes = [vp, vp, ctypes.c_uint]
+    gdi.CreateCompatibleDC.restype = vp
+    gdi.CreateCompatibleDC.argtypes = [vp]
+    gdi.CreateCompatibleBitmap.restype = vp
+    gdi.CreateCompatibleBitmap.argtypes = [vp, ctypes.c_int, ctypes.c_int]
+    gdi.SelectObject.restype = vp
+    gdi.SelectObject.argtypes = [vp, vp]
+    gdi.DeleteObject.argtypes = [vp]
+    gdi.DeleteDC.argtypes = [vp]
+    gdi.GetDIBits.argtypes = [vp, vp, ctypes.c_uint, ctypes.c_uint, vp, vp, ctypes.c_uint]
+    hdc = user32.GetWindowDC(hwnd)
+    if not hdc:
+        return None
+    mdc = gdi.CreateCompatibleDC(hdc)
+    bmp = gdi.CreateCompatibleBitmap(hdc, w, h) if mdc else None
+    if not bmp:
+        if mdc:
+            gdi.DeleteDC(mdc)
+        user32.ReleaseDC(hwnd, hdc)
+        return None
+    old = gdi.SelectObject(mdc, bmp)
+    try:
+        user32.PrintWindow(hwnd, mdc, 2)  # PW_RENDERFULLCONTENT
+
+        class BIH(ctypes.Structure):
+            _fields_ = [("biSize", wt.DWORD), ("biWidth", wt.LONG), ("biHeight", wt.LONG), ("biPlanes", wt.WORD),
+                        ("biBitCount", wt.WORD), ("biCompression", wt.DWORD), ("biSizeImage", wt.DWORD),
+                        ("biXPelsPerMeter", wt.LONG), ("biYPelsPerMeter", wt.LONG), ("biClrUsed", wt.DWORD),
+                        ("biClrImportant", wt.DWORD)]
+        bi = BIH(ctypes.sizeof(BIH), w, -h, 1, 32, 0, 0, 0, 0, 0, 0)
+        buf = ctypes.create_string_buffer(w * h * 4)
+        gdi.GetDIBits(mdc, bmp, 0, h, buf, ctypes.byref(bi), 0)
+        return Image.frombuffer("RGB", (w, h), buf, "raw", "BGRX", 0, 1).copy()
+    finally:
+        gdi.SelectObject(mdc, old)
+        gdi.DeleteObject(bmp)
+        gdi.DeleteDC(mdc)
+        user32.ReleaseDC(hwnd, hdc)
+
+
+def ocr_pending():
+    """用 Windows 內建的文字辨識讀遊戲上方的「收成 +金幣/建材」（遊戲視窗被蓋住也可以）。回傳 (金幣, 建材) 或 None。"""
+    import subprocess
+    import tempfile
+    cands = [(t, h) for pri, t, h in _chromium_pages() if pri < 1 and not user32.IsIconic(h)]
+    if not cands:
+        return None
+    tmp = tempfile.gettempdir()
+    ps1 = os.path.join(tmp, "crrank_ocr.ps1")
+    try:
+        if not os.path.isfile(ps1) or open(ps1, encoding="utf-8-sig").read() != OCR_PS1:
+            with open(ps1, "w", encoding="utf-8-sig") as f:
+                f.write(OCR_PS1)
+    except OSError:
+        return None
+    for t, h in cands:
+        png = None
+        try:
+            img = print_window(h)
+            if img is None:
+                continue
+            img = img.crop((0, 0, img.width, max(60, int(img.height * 0.3))))
+            fd, png = tempfile.mkstemp(prefix="crrank_ocr_", suffix=".png")
+            os.close(fd)
+            img.save(png)
+            out = subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", ps1, png],
+                                 capture_output=True, timeout=30, creationflags=0x08000000)  # 不跳出黑色視窗
+        except Exception:
+            continue
+        finally:
+            if png:
+                try:
+                    os.remove(png)
+                except OSError:
+                    pass
+        text = out.stdout.decode("utf-8", "replace").replace(" ", "").replace("＋", "+").replace("十", "+").replace("／", "/")
+        m = re.search(r"收成\+?\D{0,2}?(\d[\d,.]*[kK萬]?)/(\d[\d,.]*[kK萬]?)", text)
+        if m:
+            try:
+                return game_num(m.group(1)), game_num(m.group(2))
+            except ValueError:
+                continue
+        hits = [text[i.end():i.end() + 4] for i in re.finditer("收成", text)]
+        if hits and all(not re.search(r"\d", x) for x in hits):
+            return 0.0, 0.0  # 剛收完：按鈕只寫「收成」
+    return None
+
+
+class OcrRateTracker:
+    """看「收成 +x/y」長多快來估算每小時產量（讀不到網頁內容、也沒有擴充功能時用）。"""
+
+    def __init__(self, s):
+        self.s = s
+        self.run = []  # 這一輪（上次收成後）的 (時間, 金幣, 建材)
+        self.lock = threading.Lock()
+
+    def caps(self):
+        c = self.s.get("game_caps") or {}
+        return float(c.get("gold") or 2000), float(c.get("mat") or 1500)
+
+    def rates(self):
+        r = self.s.get("ocr_rates")
+        return r if isinstance(r, dict) and (r.get("gold") or r.get("mat")) else None
+
+    def add(self, t, g, m):
+        with self.lock:
+            self._add(t, g, m)
+
+    def _add(self, t, g, m):
+        cg, cm = self.caps()
+        if self.run and t - self.run[-1][0] > 180:
+            self.run = []  # 太久沒取樣（中間可能收過）→ 重來
+        if self.run and (g < self.run[-1][1] - 3 or m < self.run[-1][2] - 3):
+            if g <= cg * 0.15 and m <= cm * 0.15:
+                self.run = []  # 變回很小 → 收成過了，重新開始
+            else:
+                return  # 比上次少但還很多 → 多半是辨識錯，忽略這筆
+        self.run.append((t, g, m))
+        self.run = [x for x in self.run if t - x[0] <= 900] or [(t, g, m)]  # 只看最近 15 分鐘
+        t0, g0, m0 = self.run[0]
+        dt = t - t0
+        if dt < 20:
+            return
+        old = self.rates() or {}
+        new = dict(old)
+        for key, a, b, cap in (("gold", g0, g, cg), ("mat", m0, m, cm)):
+            if b >= cap * 0.98 or b - a < 8:  # 滿了就停產；長太少算不準
+                continue
+            est = (b - a) / dt * 3600
+            if not (0 < est <= cap * 60) or (old.get(key) and est > old[key] * 3 and dt < 120):
+                continue  # 不合理（多半是辨識錯）
+            new[key] = round(est if not old.get(key) else old[key] * 0.6 + est * 0.4, 1)
+        if new != old:
+            self.s["ocr_rates"] = new
+            save_settings(self.s)
+
+    def state(self, pending):
+        r = self.rates()
+        if not r:
+            return None
+        cg, cm = self.caps()
+        st = {"pending": pending, "src": "ocr", "where": "畫面辨識", "at": time.time()}
+        if r.get("gold"):
+            st["gold"] = {"rate": r["gold"], "cap": cg}
+        if r.get("mat"):
+            st["mat"] = {"rate": r["mat"], "cap": cm}
+        return st
 
 
 def smart_wait_seconds(st, ratio=0.9):
@@ -870,6 +1138,26 @@ function ensureAlarm() {
 chrome.runtime.onInstalled.addListener(ensureAlarm);
 chrome.runtime.onStartup.addListener(ensureAlarm);
 ensureAlarm();
+// 面板讀到的每小時產量 → 交給電腦版程式（只送到這台電腦的 127.0.0.1，給「自動判斷每小時產量」用）
+let cracPort = 0, cracBusy = false, cracNext = 0;
+async function cracPost(p, body) {
+  const ac = new AbortController(); const t = setTimeout(() => ac.abort(), 800);
+  try {
+    const r = await fetch(`http://127.0.0.1:${p}/api/ext_rates`, { method: 'POST', signal: ac.signal, headers: { 'X-CRAC': '1', 'Content-Type': 'application/json' }, body });
+    return r.ok;
+  } catch (e) { return false; } finally { clearTimeout(t); }
+}
+chrome.runtime.onMessage.addListener(m => {
+  if (!m || m.type !== 'crac-rates' || cracBusy || Date.now() < cracNext) return;
+  cracBusy = true;
+  (async () => {
+    const body = JSON.stringify(m.state);
+    if (cracPort && await cracPost(cracPort, body)) return;
+    cracPort = 0;
+    for (let i = 0; i < 20; i++) { if (await cracPost(8765 + i, body)) { cracPort = 8765 + i; return; } }
+    cracNext = Date.now() + 5 * 60 * 1000;  // 電腦版沒開：5 分鐘後再找
+  })().finally(() => { cracBusy = false; });
+});
 chrome.alarms.onAlarm.addListener(async a => {
   if (a.name !== 'crac-tick') return;
   const tabs = await chrome.tabs.query({ url: GAME });
@@ -879,6 +1167,29 @@ chrome.alarms.onAlarm.addListener(async a => {
     chrome.tabs.sendMessage(t.id, { type: 'crac-tick' }).catch(() => {});
   }
 });
+"""
+
+EXT_RATES_JS = r"""
+// 每 30 秒讀遊戲上方的「每小時產出」和「收成 +x/y」，交給電腦版的「自動判斷每小時產量」（應用程式視窗也可以）
+(function(){
+  function n(t){t=String(t).replace(/,/g,'');var m=1;if(/[kK]$/.test(t))m=1e3;else if(/[mM]$/.test(t))m=1e6;else if(/萬$/.test(t))m=1e4;return parseFloat(t)*m;}
+  function report(){
+    try{
+      var o={};
+      ['金幣','建材'].forEach(function(k,i){
+        var el=document.querySelector('[title^="'+k+'・每小時產出"]');if(!el)return;
+        var a=/每小時產出\s*([\d,.]+[kKmM萬]?)/.exec(el.title),b=/累積到\s*([\d,.]+[kKmM萬]?)/.exec(el.title);
+        if(a)o[i?'mat':'gold']={rate:n(a[1]),cap:b?n(b[1]):(i?1500:2000)};
+      });
+      var btn=[].slice.call(document.querySelectorAll('button')).filter(function(b){return /收成/.test(b.innerText||'');})[0];
+      var m=btn&&/收成\s*\+\s*([\d,.]+[kKmM萬]?)\s*\/\s*([\d,.]+[kKmM萬]?)/.exec(btn.innerText);
+      if(m)o.pending=[n(m[1]),n(m[2])];else if(btn)o.pending=[0,0];
+      if(o.gold||o.mat){var r=chrome.runtime.sendMessage({type:'crac-rates',state:o});if(r&&r.catch)r.catch(function(){});}
+    }catch(e){}
+  }
+  setTimeout(report,3000);setInterval(report,30000);
+  chrome.runtime.onMessage.addListener(function(m){if(m&&m.type==='crac-tick')report();});
+})();
 """
 
 EXT_README = """CR Rank 自動收成 — Chrome／Edge 擴充功能
@@ -910,11 +1221,11 @@ def write_extension(path=None):
         "version": APP_VERSION,
         "description": "在知識領土頁面自動放入自動收成面板，背景分頁也會繼續運作（非官方玩家工具）。",
         "permissions": ["alarms"],
-        "host_permissions": ["https://crrank.xpgs25.com/*"],
+        "host_permissions": ["https://crrank.xpgs25.com/*", "http://127.0.0.1/*"],
         "background": {"service_worker": "background.js"},
         "content_scripts": [{"matches": ["https://crrank.xpgs25.com/*"], "js": ["panel.js"], "run_at": "document_idle"}],
     }
-    panel = MOBILE_JS.strip() + "\nchrome.runtime.onMessage.addListener(function(m){if(m&&m.type==='crac-tick'&&window.__crac&&window.__crac.tick)window.__crac.tick();});\n"
+    panel = MOBILE_JS.strip() + "\nchrome.runtime.onMessage.addListener(function(m){if(m&&m.type==='crac-tick'&&window.__crac&&window.__crac.tick)window.__crac.tick();});\n" + EXT_RATES_JS
     files = {"manifest.json": json.dumps(manifest, ensure_ascii=False, indent=2), "background.js": EXT_BACKGROUND_JS.strip() + "\n",
              "panel.js": panel, "安裝說明.txt": EXT_README}
     for name, text in files.items():
@@ -1085,6 +1396,17 @@ def cdp_call(ws_url, method, params, timeout=5):
         s.close()
 
 
+class ExclusiveHTTPServer(ThreadingHTTPServer):
+    """Windows 上 SO_REUSEADDR 會讓兩個程式綁同一個埠（要求被別的程式收走）→ 改成獨佔。"""
+    allow_reuse_address = False
+    daemon_threads = True
+
+    def server_bind(self):
+        if hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        super().server_bind()
+
+
 def make_handler(app):
     class H(BaseHTTPRequestHandler):
         def log_message(self, *a):
@@ -1098,6 +1420,41 @@ def make_handler(app):
             self.send_header("Cache-Control", "no-store")
             self.end_headers()
             self.wfile.write(data)
+
+        def do_POST(self):
+            # 只接受這台電腦上擴充功能送來的產量（自訂標頭讓一般網頁沒辦法偷送）
+            import math
+            self.connection.settimeout(5)
+            origin = self.headers.get("Origin", "")
+            if urllib.parse.urlparse(self.path).path != "/api/ext_rates" or self.client_address[0] != "127.0.0.1" \
+                    or self.headers.get("X-CRAC") != "1" or (origin and not origin.startswith("chrome-extension://")):
+                return self._send(404, "not found", "text/plain")
+            try:
+                n = int(self.headers.get("Content-Length") or 0)
+                if not 0 < n <= 4096:
+                    raise ValueError
+                d = json.loads(self.rfile.read(n).decode("utf-8"))
+                if not isinstance(d, dict):
+                    raise ValueError
+
+                def num(v, lo, hi):
+                    v = float(v)
+                    if not (math.isfinite(v) and lo <= v <= hi):
+                        raise ValueError
+                    return v
+                st = {}
+                for k in ("gold", "mat"):
+                    if isinstance(d.get(k), dict):
+                        st[k] = {"rate": num(d[k]["rate"], 0.001, 1e7),
+                                 "cap": num(d[k].get("cap") or (2000 if k == "gold" else 1500), 1, 1e8)}
+                if isinstance(d.get("pending"), list) and len(d["pending"]) == 2:
+                    st["pending"] = (num(d["pending"][0], 0, 1e9), num(d["pending"][1], 0, 1e9))
+                if st.get("gold") or st.get("mat"):
+                    st["at"], st["where"], st["src"] = time.time(), "擴充功能", "ext"
+                    app.ext_state = st
+            except Exception:
+                return self._send(400, "bad", "text/plain")
+            self._send(200, "ok", "text/plain")
 
         def do_GET(self):
             u = urllib.parse.urlparse(self.path)
@@ -1806,6 +2163,12 @@ class App:
         self.root.minsize(int(520 * UI_K), int(520 * UI_K))
         self.clicker.on_change = lambda: self.root.after(0, self.refresh_btn)
         self.clicker.smart_fn = self.smart_wait
+        self.clicker.pre_click_fn = self.pre_click
+        self.rate_lock = threading.Lock()
+        self.last_click_at = 0.0
+        self.ext_state = None
+        self.ocr = OcrRateTracker(self.s)
+        self.ocr_waiting = False
         self.rate_state, self.rate_ok, self.rate_checked, self.smart_used = None, None, 0, False
         self.buyer = BuyRunner(self.s)
         self.buyer.on_change = lambda: self.root.after(0, self.refresh_buy)
@@ -2028,7 +2391,8 @@ class App:
 
         # ---- 自動判斷產量 ----
         c = card(pc, "🤖 自動判斷每小時產量",
-                 "直接讀你開著的知識領土分頁，算出金幣或建材快滿（90%）前收成。產量變了會跟著變，不用手動輸入。")
+                 "讀你開著的知識領土（分頁或「在應用程式中開啟」的視窗都可以），算出金幣或建材快滿（90%）前收成。"
+                 "有裝擴充功能最準；沒有的話用畫面辨識估算。")
         self.vauto_rate = tk.BooleanVar(value=self.s.get("auto_rate", True))
         r = row(c)
         ttk.Checkbutton(r, text="自動判斷收成時間", variable=self.vauto_rate, command=self.set_auto_rate).pack(side="left")
@@ -2168,11 +2532,44 @@ class App:
         if self.s["auto_rate"]:
             threading.Thread(target=self.read_rates, daemon=True).start()
 
-    def read_rates(self):
+    def read_rates(self, after_click=False, wait_lock=True):
+        """讀每小時產量：先用擴充功能回報的（最準），再讀網頁內容，最後用畫面辨識估算。"""
+        if not self.rate_lock.acquire(blocking=wait_lock):
+            return self.rate_state if self.rate_ok else None  # 別的執行緒正在讀
         try:
-            st = read_game_state()
-        except Exception:
-            st = None
+            return self._read_rates(after_click)
+        finally:
+            self.rate_lock.release()
+
+    def _read_rates(self, after_click):
+        st = None
+        self.ocr_waiting = False
+        ext = getattr(self, "ext_state", None)
+        if ext and time.time() - ext["at"] < 90:
+            st = dict(ext)
+            if after_click or ext["at"] < self.last_click_at:
+                st["pending"] = None  # 剛收完：還沒收的當作 0（擴充功能最多 30 秒才回報一次）
+        if not st:
+            try:
+                st = read_game_state()
+            except Exception:
+                st = None
+            if st:
+                st["src"] = "acc"
+        if st and st.get("src") in ("ext", "acc"):  # 記住遊戲實際的上限，畫面辨識也用得到
+            caps = {k: st[k]["cap"] for k in ("gold", "mat") if st.get(k)}
+            if caps and caps != {k: v for k, v in (self.s.get("game_caps") or {}).items() if k in caps}:
+                self.s["game_caps"] = dict(self.s.get("game_caps") or {}, **caps)
+                save_settings(self.s)
+        if not st:
+            try:
+                p = ocr_pending()
+            except Exception:
+                p = None
+            if p:
+                self.ocr.add(time.time(), *p)
+                st = self.ocr.state((0, 0) if after_click else p)
+                self.ocr_waiting = st is None
         if st:
             self.rate_state = st
         self.rate_ok = bool(st)
@@ -2183,19 +2580,46 @@ class App:
             pass
         return st
 
-    def smart_wait(self, after_click):
+    def pre_click(self, evt):
+        """點收成前：如果正在用畫面辨識估算，先讀一次「收成 +x/y」（和收完後的 0 比，就知道長多快）。"""
+        st = self.rate_state if self.rate_ok else None
+        if st and st.get("src") in ("ext", "acc") and time.time() - st.get("at", 0) < 300:
+            return
+        if not self.rate_lock.acquire(timeout=10):
+            return
+        try:
+            if evt.is_set():
+                return
+            p = ocr_pending()
+            if p:
+                self.ocr.add(time.time(), *p)
+        except Exception:
+            pass
+        finally:
+            self.rate_lock.release()
+
+    def smart_wait(self, after_click, evt=None):
         """連點每次點完呼叫：等遊戲畫面更新後讀數字，回傳到快滿還有幾秒（讀不到回傳 None）。"""
-        if after_click and self.clicker.stop_evt.wait(2.5):
-            return None
-        sec = smart_wait_seconds(self.read_rates())
+        evt = evt or self.clicker.stop_evt
+        if after_click:
+            self.last_click_at = time.time()
+            if evt.wait(2.5):
+                return None
+        sec = smart_wait_seconds(self.read_rates(after_click=after_click))
         self.smart_used = sec is not None
         return sec
 
     def rate_watch(self):
+        last = 0.0
         while True:
-            if self.s.get("auto_rate") and not self.clicker.running:
-                self.read_rates()
-            time.sleep(60)
+            if self.s.get("auto_rate"):
+                # 收成執行中也定時讀（畫面辨識要靠多次讀取「收成 +x/y」來估算產量）
+                if time.time() - last >= (40 if self.clicker.running else 60):
+                    last = time.time()
+                    self.read_rates(wait_lock=False)
+                else:
+                    chrome_keepalive()  # 讓 Chrome 保持打開網頁的輔助功能，收成時讀取才會立即成功
+            time.sleep(20)
 
     def refresh_rate_lbl(self):
         if not self.s.get("auto_rate"):
@@ -2209,12 +2633,17 @@ class App:
         if self.rate_ok and st:
             sec = smart_wait_seconds(st)
             mins = max(1, int(round(sec / 60))) if sec else 0
+            src = {"ext": "擴充功能", "acc": "讀網頁", "ocr": "畫面辨識估算"}.get(st.get("src"), "")
             self.rate_lbl.config(style="Ok.TLabel", text=(
-                f"✔ {describe_state(st)}\n→ 約 {mins} 分鐘後快滿，到時自動收成（{when} 讀取）"))
+                f"✔ {describe_state(st)}\n→ 約 {mins} 分鐘後快滿，到時自動收成（{when} {src}）"))
+        elif getattr(self, "ocr_waiting", False):
+            self.rate_lbl.config(style="Muted.TLabel", text=(
+                f"正在用畫面辨識估算產量（{when}）：看「收成 +x/y」長多快，大約 1～2 分鐘後會有結果。"
+                "裝了擴充功能（下面的「🧩 用原本的 Chrome」）會更準更快。"))
         else:
             self.rate_lbl.config(style="Muted.TLabel", text=(
-                f"找不到遊戲（{when}）：在 Chrome／Edge 打開知識領土並停在那個分頁，視窗不要縮到最小。"
-                "讀不到時會用下面的間隔。"))
+                f"找不到遊戲（{when}）：在 Chrome／Edge 打開知識領土（分頁或應用程式視窗都可以），視窗不要縮到最小。"
+                "讀不到時會用下面的間隔。裝了擴充功能的話，到 chrome://extensions 按它的「重新載入」換成新版會更準。"))
 
     def show_tab(self, k):
         self.cur_tab = k
@@ -2665,7 +3094,7 @@ class App:
         port = int(self.s.get("port", 8765))
         for p in range(port, port + 20):
             try:
-                self.server = ThreadingHTTPServer(("0.0.0.0", p), make_handler(self))
+                self.server = ExclusiveHTTPServer(("0.0.0.0", p), make_handler(self))
                 break
             except OSError:
                 continue
@@ -2753,5 +3182,9 @@ if __name__ == "__main__":
         _st = read_game_state()
         with open(sys.argv[2], "w", encoding="utf-8") as _f:
             json.dump({"state": _st, "text": describe_state(_st), "wait": smart_wait_seconds(_st)}, _f, ensure_ascii=False)
+        sys.exit(0)
+    if len(sys.argv) >= 3 and sys.argv[1] == "--ocr-game":  # 自我檢查：畫面辨識讀「收成 +x/y」
+        with open(sys.argv[2], "w", encoding="utf-8") as _f:
+            json.dump({"pending": ocr_pending()}, _f)
         sys.exit(0)
     App().run()

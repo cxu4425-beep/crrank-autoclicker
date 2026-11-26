@@ -133,12 +133,13 @@ public class ClickService extends AccessibilityService {
 
     // ---------- 🌍 遠端遙控的實時畫面（Android 11 以上） ----------
     public interface JpegCallback {
-        void done(byte[] jpg);
+        /** jpg＝縮小後的畫面；fullW／fullH＝原本螢幕大小（手機點擊換算座標用） */
+        void done(byte[] jpg, int fullW, int fullH);
     }
 
     public void captureJpeg(final int cx, final int cy, final int maxW, final int quality, final JpegCallback cb) {
         if (android.os.Build.VERSION.SDK_INT < 30) {
-            cb.done(null);
+            cb.done(null, 0, 0);
             return;
         }
         try {
@@ -147,10 +148,13 @@ public class ClickService extends AccessibilityService {
                 public void onSuccess(ScreenshotResult r) {
                     new Thread(() -> {
                         byte[] out = null;
+                        int fw = 0, fh = 0;
                         try {
                             android.hardware.HardwareBuffer hb = r.getHardwareBuffer();
                             android.graphics.Bitmap hw = android.graphics.Bitmap.wrapHardwareBuffer(hb, r.getColorSpace());
                             android.graphics.Bitmap bm = hw.copy(android.graphics.Bitmap.Config.ARGB_8888, true);
+                            fw = bm.getWidth();
+                            fh = bm.getHeight();
                             hw.recycle();
                             hb.close();
                             android.graphics.Canvas c = new android.graphics.Canvas(bm);
@@ -171,17 +175,17 @@ public class ClickService extends AccessibilityService {
                             bm.recycle();
                         } catch (Throwable ignored) {
                         }
-                        cb.done(out);
+                        cb.done(out, fw, fh);
                     }).start();
                 }
 
                 @Override
                 public void onFailure(int code) {
-                    cb.done(null);  // 息屏或太頻繁時會失敗，下次再試
+                    cb.done(null, 0, 0);  // 息屏或太頻繁時會失敗，下次再試
                 }
             });
         } catch (Throwable t) {
-            cb.done(null);
+            cb.done(null, 0, 0);
         }
     }
 

@@ -42,6 +42,7 @@ public final class Remote {
     private OutputStream out;
     private Thread th;
     private volatile byte[] pendingFrame;
+    private volatile String lastTap = "";
     private volatile boolean capturing;
 
     public static synchronized Remote get(Engine e) {
@@ -274,7 +275,7 @@ public final class Remote {
             byte[] f = pendingFrame;
             if (f != null) {
                 pendingFrame = null;
-                publish(topic("up"), seal('F', f));
+                publish(topic("up"), seal('G', f));
             }
             if (watching && !capturing && now - lastFrame >= 2000) {
                 lastFrame = now;
@@ -297,9 +298,17 @@ public final class Remote {
         if (s == null || android.os.Build.VERSION.SDK_INT < 30) return;
         capturing = true;
         final boolean hq = System.currentTimeMillis() < hqUntil;
-        e.h.post(() -> s.captureJpeg(e.x, e.y, hq ? 1080 : 540, hq ? 70 : 55, jpg -> {
+        e.h.post(() -> s.captureJpeg(e.x, e.y, hq ? 1080 : 540, hq ? 70 : 55, (jpg, fw, fh) -> {
             capturing = false;
-            if (jpg != null) pendingFrame = jpg;
+            if (jpg == null) return;
+            // 'G' 格式：2 位元組長度＋{"box":[左,上,寬,高]}＋JPEG，手機點畫面時換算成螢幕座標
+            byte[] meta = ("{\"box\":[0,0," + fw + "," + fh + "]}").getBytes(StandardCharsets.UTF_8);
+            byte[] g = new byte[2 + meta.length + jpg.length];
+            g[0] = (byte) (meta.length >> 8);
+            g[1] = (byte) meta.length;
+            System.arraycopy(meta, 0, g, 2, meta.length);
+            System.arraycopy(jpg, 0, g, 2 + meta.length, jpg.length);
+            pendingFrame = g;
         }));
     }
 
@@ -310,7 +319,8 @@ public final class Remote {
                     .put("interval", Engine.fmt(e.interval)).put("unit", e.unit).put("x", e.x).put("y", e.y)
                     .put("ver", e.appVersion()).put("auto_rate", e.autoRate).put("smart", e.smartUsed)
                     .put("buy", e.buyRunning).put("buy_text", e.buyStatus()).put("ts", System.currentTimeMillis())
-                    .put("android", true).put("name", android.os.Build.MODEL);
+                    .put("android", true).put("name", android.os.Build.MODEL)
+                    .put("remote_click", sp.getBoolean("remote_click", true)).put("last_tap", lastTap);
             GameReader.Rates r = e.lastRates;
             String rate;
             if (!e.autoRate) rate = "自動判斷已關閉";
@@ -323,6 +333,24 @@ public final class Remote {
         } catch (Exception ex) {
             return "{}";
         }
+    }
+
+    /** 對方在實時畫面上點一下 → 在這支手機的同一點點擊 */
+    private void tap(JSONObject c) {
+        if (!sp.getBoolean("remote_click", true)) {
+            lastTap = "手機端關閉了「允許從遠端點擊畫面」";
+            return;
+        }
+        ClickService s = ClickService.inst;
+        org.json.JSONArray box = c.optJSONArray("box");
+        double fx = c.optDouble("fx", -1), fy = c.optDouble("fy", -1);
+        if (s == null || box == null || box.length() < 4 || fx < 0 || fx > 1 || fy < 0 || fy > 1) return;
+        int w = box.optInt(2), h = box.optInt(3);
+        if (w <= 0 || h <= 0 || w > 20000 || h > 20000) return;
+        int x = box.optInt(0) + (int) Math.round(fx * (w - 1)), y = box.optInt(1) + (int) Math.round(fy * (h - 1));
+        s.tap(x, y);
+        lastTap = "已點擊 (" + x + ", " + y + ") " + new java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US).format(new java.util.Date());
+        watchUntil = Math.max(watchUntil, System.currentTimeMillis() + 20000);
     }
 
     private void onMessage(byte[] payload) {
@@ -377,6 +405,9 @@ public final class Remote {
                 case "buy":
                     if (e.buyRunning) e.buyStop();
                     else e.buyStart();
+                    break;
+                case "tap":
+                    tap(cc);
                     break;
             }
         });

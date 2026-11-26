@@ -879,6 +879,10 @@ public class MainActivity extends Activity {
             refresh();
         });
         p.addView(ron);
+        CheckBox rclick = check("允許從遠端點擊這支手機的畫面（對方開「👆 點擊模式」）");
+        rclick.setChecked(e.prefs().getBoolean("remote_click", true));
+        rclick.setOnCheckedChangeListener((v, on) -> e.prefs().edit().putBoolean("remote_click", on).apply());
+        p.addView(rclick);
         remoteTxt = label("", 14, true);
         remoteTxt.setTextColor(0xFF2F6FDE);
         p.addView(remoteTxt);

@@ -17,7 +17,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from tkinter import filedialog, messagebox, ttk
 
 APP_NAME = "CR Rank 自動收成器"
-APP_VERSION = "2.2"
+APP_VERSION = "2.3"
 REPO = "cxu4425-beep/crrank-autoclicker"
 GAME_URL = "https://crrank.xpgs25.com/game"
 
@@ -88,7 +88,7 @@ SETTINGS_FILE = os.path.join(app_dir(), "crrank_clicker_settings.json")
 DEFAULTS = {"x": 0, "y": 0, "interval": 60, "unit": "秒", "jitter": 0,
             "limit": 0, "restore": True, "click_now": True, "port": 8765,
             "buy_mode": "restock", "buy_every": 30, "buy_offset": 10, "buy_now": True,
-            "buy_slot": 0, "buy_rotate": False, "auto_rate": True, "remote_on": True}
+            "buy_slot": 0, "buy_rotate": False, "auto_rate": True, "remote_on": True, "remote_click": True}
 NUM_SLOTS = 3
 
 
@@ -1249,7 +1249,7 @@ def _unb64u(t):
 
 
 def capture_frame(s, max_w=900, quality=55):
-    """擷取遊戲視窗（找不到就整個螢幕），標出點擊位置，回傳 JPEG。"""
+    """擷取遊戲視窗（找不到就整個螢幕），標出點擊位置，回傳 (JPEG, 螢幕範圍 (左, 上, 寬, 高))。"""
     from PIL import Image, ImageDraw, ImageGrab
     import io
     import ctypes.wintypes as wt
@@ -1280,7 +1280,7 @@ def capture_frame(s, max_w=900, quality=55):
         img = img.resize((max_w, int(img.height * max_w / img.width)), Image.BILINEAR)
     out = io.BytesIO()
     img.save(out, "JPEG", quality=quality, optimize=True)
-    return out.getvalue()
+    return out.getvalue(), (box[0], box[1], box[2] - box[0], box[3] - box[1])
 
 
 class RemoteLink:
@@ -1296,6 +1296,7 @@ class RemoteLink:
         self.mq = None
         self.watch_until = 0.0
         self.hq_until = 0.0
+        self.last_tap = ""
         self.seen = {}
         self.stop_evt = threading.Event()
         self.kick = threading.Event()
@@ -1381,8 +1382,9 @@ class RemoteLink:
                 last_frame = now
                 try:
                     hq = now < self.hq_until
-                    jpg = capture_frame(self.app.s, max_w=1600 if hq else 900, quality=70 if hq else 55)
-                    mq.publish(self.topic("up"), self.seal(b"F", jpg))
+                    jpg, box = capture_frame(self.app.s, max_w=1600 if hq else 900, quality=70 if hq else 55)
+                    meta = json.dumps({"box": list(box)}).encode()  # 畫面在螢幕上的位置：手機點哪裡就換算成螢幕座標
+                    mq.publish(self.topic("up"), self.seal(b"G", len(meta).to_bytes(2, "big") + meta + jpg))
                 except Exception:
                     pass
             mq.ping_if_due()
@@ -1392,7 +1394,8 @@ class RemoteLink:
     def status(self):
         a = self.app
         st = dict(a.clicker.status())
-        st.update(ver=APP_VERSION, name=os.environ.get("COMPUTERNAME") or socket.gethostname() or "電腦",
+        st.update(remote_click=bool(a.s.get("remote_click", True)), last_tap=self.last_tap,
+                  ver=APP_VERSION, name=os.environ.get("COMPUTERNAME") or socket.gethostname() or "電腦",
                   auto_rate=bool(a.s.get("auto_rate")), buy=a.buyer.running,
                   buy_text=a.buyer.status(), smart=bool(a.smart_used), ts=int(time.time() * 1000))
         rs = a.rate_state if a.rate_ok else None
@@ -1450,6 +1453,29 @@ class RemoteLink:
             threading.Thread(target=a.read_rates, daemon=True).start()
         elif cmd == "buy":
             a.root.after(0, a.toggle_buy)
+        elif cmd == "tap":
+            self.tap(c)
+
+    def tap(self, c):
+        """手機在實時畫面上點一下 → 在電腦螢幕的同一點點擊（只能點在傳過去的畫面範圍內）。"""
+        if not self.app.s.get("remote_click", True):
+            self.last_tap = "電腦端關閉了「允許從手機點擊畫面」"
+            return
+        try:
+            fx, fy = float(c["fx"]), float(c["fy"])
+            l, t, w, h = (int(v) for v in c["box"])
+        except (KeyError, TypeError, ValueError):
+            return
+        if not (0 <= fx <= 1 and 0 <= fy <= 1 and 0 < w <= 20000 and 0 < h <= 20000):
+            return
+        x, y = int(round(l + fx * (w - 1))), int(round(t + fy * (h - 1)))
+        vx, vy = user32.GetSystemMetrics(76), user32.GetSystemMetrics(77)
+        vw, vh = user32.GetSystemMetrics(78), user32.GetSystemMetrics(79)
+        if not (vx <= x < vx + vw and vy <= y < vy + vh):
+            return
+        threading.Thread(target=click_at, args=(x, y, True), daemon=True).start()
+        self.last_tap = f"已在電腦點擊 ({x}, {y}) {time.strftime('%H:%M:%S')}"
+        self.watch_until = max(self.watch_until, time.time() + 20)
 
 
 # ---------- 介面外觀 ----------
@@ -2074,6 +2100,10 @@ class App:
         self.vremote = tk.BooleanVar(value=self.s.get("remote_on", True))
         r = row(c)
         ttk.Checkbutton(r, text="允許遠端遙控", variable=self.vremote, command=self.set_remote).pack(side="left")
+        self.vrclick = tk.BooleanVar(value=self.s.get("remote_click", True))
+        ttk.Checkbutton(c, text="允許從手機點擊電腦畫面（手機上開「👆 點擊模式」，點畫面＝電腦點那裡）", variable=self.vrclick,
+                        command=lambda: (self.s.__setitem__("remote_click", bool(self.vrclick.get())), save_settings(self.s))
+                        ).pack(anchor="w", pady=(2, 0))
         RoundBtn(r, text="🔄 換新連結", command=self.renew_remote).pack(side="right")
         RoundBtn(r, text="🔗 複製連結", command=self.copy_remote).pack(side="right", padx=(0, 6))
         self.remote_lbl = lbl(c, "", "Info.TLabel", wraplength=WRAP())

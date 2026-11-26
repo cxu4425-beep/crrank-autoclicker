@@ -50,6 +50,11 @@ label.chk input{width:22px;height:22px;min-height:0;accent-color:#E0A800}
 .dev .nm{font-weight:700}
 .dev.cur .nm::after{content:" · 使用中";color:var(--green);font-weight:400;font-size:13px}
 .screen img{cursor:zoom-in}
+.screen.click{box-shadow:0 0 0 3px var(--yel)}.screen.click img{cursor:crosshair}
+#viewer.click{box-shadow:inset 0 0 0 3px #FFC93C}
+button.on{background:var(--yel)!important;color:var(--ink)!important}
+.ripple{position:absolute;width:40px;height:40px;margin:-20px 0 0 -20px;border:3px solid #FFC93C;border-radius:50%;pointer-events:none;animation:rip .7s ease-out forwards;z-index:25}
+@keyframes rip{from{transform:scale(.25);opacity:1}to{transform:scale(1.5);opacity:0}}
 #viewer{position:fixed;inset:0;background:#000;z-index:20;display:none;touch-action:none;overflow:hidden;user-select:none;-webkit-user-select:none}
 #viewer.open{display:block}
 #vimg{position:absolute;left:0;top:0;transform-origin:0 0;max-width:none;will-change:transform;-webkit-user-drag:none;pointer-events:none}
@@ -82,6 +87,8 @@ label.chk input{width:22px;height:22px;min-height:0;accent-color:#E0A800}
     <div class="screen" id="screen"><div class="ph" id="ph">等電腦傳畫面…<br>（電腦要開著程式，並勾選「允許遠端遙控」）</div></div>
     <div class="row"><span class="muted grow" id="frameAge">紅圈＝自動收成會點的位置</span>
       <button id="zoomBtn" class="yel">🔍 放大</button><button id="pause">⏸ 暫停</button></div>
+    <div class="row"><button class="grow" id="clickBtn">👆 點擊模式：關</button></div>
+    <div class="muted" id="tapInfo">打開點擊模式後，點畫面上的哪裡，那台裝置就會點哪裡。</div>
   </div>
 
   <div class="card">
@@ -123,7 +130,7 @@ label.chk input{width:22px;height:22px;min-height:0;accent-color:#E0A800}
 </main>
 <div id="viewer" aria-label="放大檢視">
   <img id="vimg" alt="電腦畫面（放大）">
-  <div class="vbar vtop"><span class="vinfo" id="vinfo">兩指縮放、拖動，點兩下放大</span><button id="vfs" hidden>⛶ 全螢幕</button><button id="vclose">✕ 關閉</button></div>
+  <div class="vbar vtop"><span class="vinfo" id="vinfo">兩指縮放、拖動，點兩下放大；開「👆 點擊」後點畫面＝點那裡</span><button id="vclick">👆 點擊</button><button id="vfs" hidden>⛶ 全螢幕</button><button id="vclose">✕ 關閉</button></div>
   <div class="vbar vbot"><button id="vout">➖</button><span id="vzoom">100%</span><button id="vin">➕</button><button id="vreset">↺ 符合畫面</button></div>
 </div>
 <div id="toast"></div>
@@ -232,12 +239,15 @@ function onMsg(myGen,payload){
       update(dev.id,function(x){x.seen=lastStatus;if(!x.custom&&st.name)x.name=st.name;});
       if(!dev.custom&&st.name&&dev.name!==st.name){dev.name=st.name;renderDevices();}
       render();
-    }else if(kind==='F'&&!paused){
+    }else if((kind==='F'||kind==='G')&&!paused){
+      var meta=null;
+      if(kind==='G'){var ml=(body[0]<<8)|body[1];try{meta=JSON.parse(td.decode(body.subarray(2,2+ml)));}catch(e){}body=body.subarray(2+ml);}
+      frameMeta=meta;
       var url=URL.createObjectURL(new Blob([body],{type:'image/jpeg'}));
       var img=$('screen').querySelector('img');
       if(!img){$('screen').innerHTML='';img=document.createElement('img');img.alt='電腦畫面';$('screen').appendChild(img);}
       img.onload=function(){if(frameUrl)URL.revokeObjectURL(frameUrl);frameUrl=url;};
-      img.onclick=openViewer;
+      img.onclick=onScreenClick;
       img.src=url;lastFrame=Date.now();
       if(vOpen)setViewerSrc(url);
     }
@@ -254,6 +264,7 @@ function render(){
   $('bst').textContent=st.buy_text||'';
   var b=$('buy');b.textContent=st.buy?'■ 停止自動購買':'▶ 開始自動購買';b.style.background=st.buy?'var(--red)':'';
   if(st.no_frame&&!lastFrame)$('ph').textContent=st.no_frame;
+  if(st.last_tap)$('tapInfo').textContent='👆 '+st.last_tap;
 }
 function tick(){
   var c=$('conn'),age=(Date.now()-lastStatus)/1000;
@@ -351,6 +362,11 @@ function up(e){
   var ids=Object.keys(ptrs);
   if(ids.length<2)pinch=null;
   if(ids.length===1){var p=ptrs[ids[0]];drag={x:p.x,y:p.y,vx:vx,vy:vy,moved:true};return;}
+  if(drag&&!drag.moved&&clickMode&&vw){  // 點擊模式：點哪裡就叫那台裝置點哪裡
+    var fx=(e.clientX-vx)/vs/vw,fy=(e.clientY-vy)/vs/vh;
+    if(fx>=0&&fx<=1&&fy>=0&&fy<=1&&tapAt(fx,fy))ripple(viewer,e.clientX,e.clientY);
+    drag=null;return;
+  }
   if(drag&&!drag.moved){var now=Date.now();
     if(now-lastTap<320){if(vs>vfit*1.05)fit();else zoomAt(2.5,e.clientX,e.clientY);lastTap=0;}else lastTap=now;}
   drag=null;
@@ -358,6 +374,37 @@ function up(e){
 viewer.addEventListener('pointerup',up);viewer.addEventListener('pointercancel',up);
 viewer.addEventListener('wheel',function(e){e.preventDefault();zoomAt(e.deltaY<0?1.15:1/1.15,e.clientX,e.clientY);},{passive:false});
 document.addEventListener('keydown',function(e){if(vOpen&&e.key==='Escape')closeViewer(false);});
+
+// ---- 👆 點擊模式：在實時畫面上點一下 → 那台裝置在同一點點擊 ----
+var clickMode=false,frameMeta=null,lastSend=0;
+function setClickMode(on){
+  clickMode=on;
+  $('clickBtn').textContent='👆 點擊模式：'+(on?'開（點畫面＝點那裡）':'關');
+  $('clickBtn').classList.toggle('on',on);$('vclick').classList.toggle('on',on);
+  $('screen').classList.toggle('click',on);viewer.classList.toggle('click',on);
+  if(on)toast('點擊模式：點畫面上的位置，那台裝置就會點那裡');
+}
+function ripple(parent,x,y){
+  var r=parent.getBoundingClientRect(),d=document.createElement('div');d.className='ripple';
+  d.style.left=(x-r.left)+'px';d.style.top=(y-r.top)+'px';
+  if(parent===viewer){d.style.position='fixed';d.style.left=x+'px';d.style.top=y+'px';document.body.appendChild(d);}else parent.appendChild(d);
+  setTimeout(function(){d.remove();},800);
+}
+function tapAt(fx,fy){
+  if(!frameMeta||!frameMeta.box){toast('那台裝置要更新到 v2.3 以上才能用點擊模式');return false;}
+  if(st&&st.remote_click===false){toast('那台裝置關閉了「允許從手機點擊畫面」');return false;}
+  var now=Date.now();if(now-lastSend<250)return false;lastSend=now;
+  cmd('tap',{fx:Math.round(fx*10000)/10000,fy:Math.round(fy*10000)/10000,box:frameMeta.box});
+  return true;
+}
+function onScreenClick(ev){
+  if(!clickMode)return openViewer();
+  var img=ev.currentTarget,r=img.getBoundingClientRect();
+  var fx=(ev.clientX-r.left)/r.width,fy=(ev.clientY-r.top)/r.height;
+  if(fx>=0&&fx<=1&&fy>=0&&fy<=1&&tapAt(fx,fy))ripple($('screen'),ev.clientX,ev.clientY);
+}
+$('clickBtn').onclick=function(){setClickMode(!clickMode);};
+$('vclick').onclick=function(){setClickMode(!clickMode);};
 
 $('go').onclick=function(){cmd(st&&st.running?'stop':'start');toast('已送出，等回應…');};
 $('once').onclick=function(){cmd('once');toast('已叫它點一下');};

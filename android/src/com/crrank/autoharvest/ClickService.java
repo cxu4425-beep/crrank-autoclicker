@@ -136,7 +136,7 @@ public class ClickService extends AccessibilityService {
         void done(byte[] jpg);
     }
 
-    public void captureJpeg(final int cx, final int cy, final JpegCallback cb) {
+    public void captureJpeg(final int cx, final int cy, final int maxW, final int quality, final JpegCallback cb) {
         if (android.os.Build.VERSION.SDK_INT < 30) {
             cb.done(null);
             return;
@@ -162,10 +162,10 @@ public class ClickService extends AccessibilityService {
                             c.drawCircle(cx, cy, rr, p);
                             c.drawLine(cx - rr * 1.8f, cy, cx + rr * 1.8f, cy, p);
                             c.drawLine(cx, cy - rr * 1.8f, cx, cy + rr * 1.8f, p);
-                            int w = Math.min(540, bm.getWidth());
+                            int w = Math.min(maxW, bm.getWidth());
                             android.graphics.Bitmap sm = android.graphics.Bitmap.createScaledBitmap(bm, w, bm.getHeight() * w / bm.getWidth(), true);
                             java.io.ByteArrayOutputStream bo = new java.io.ByteArrayOutputStream();
-                            sm.compress(android.graphics.Bitmap.CompressFormat.JPEG, 55, bo);
+                            sm.compress(android.graphics.Bitmap.CompressFormat.JPEG, quality, bo);
                             out = bo.toByteArray();
                             if (sm != bm) sm.recycle();
                             bm.recycle();

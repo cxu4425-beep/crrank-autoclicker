@@ -49,6 +49,16 @@ label.chk input{width:22px;height:22px;min-height:0;accent-color:#E0A800}
 .dev:first-child{border-top:0}
 .dev .nm{font-weight:700}
 .dev.cur .nm::after{content:" · 使用中";color:var(--green);font-weight:400;font-size:13px}
+.screen img{cursor:zoom-in}
+#viewer{position:fixed;inset:0;background:#000;z-index:20;display:none;touch-action:none;overflow:hidden;user-select:none;-webkit-user-select:none}
+#viewer.open{display:block}
+#vimg{position:absolute;left:0;top:0;transform-origin:0 0;max-width:none;will-change:transform;-webkit-user-drag:none;pointer-events:none}
+.vbar{position:absolute;left:0;right:0;display:flex;gap:8px;justify-content:center;align-items:center;padding:10px;padding-left:max(10px,env(safe-area-inset-left));padding-right:max(10px,env(safe-area-inset-right))}
+.vtop{top:0;padding-top:max(10px,env(safe-area-inset-top));background:linear-gradient(rgba(0,0,0,.65),transparent)}
+.vbot{bottom:0;padding-bottom:max(12px,env(safe-area-inset-bottom));background:linear-gradient(transparent,rgba(0,0,0,.65))}
+.vbar button{background:rgba(45,51,70,.92);color:#fff;font-weight:700;min-width:48px}
+.vbar .vinfo{color:#C9CEDC;font-size:13px;flex:1;text-align:left}
+#vzoom{color:#FFC93C;font-weight:800;min-width:56px;text-align:center}
 #toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:var(--head);color:#fff;padding:10px 16px;border-radius:999px;font-size:14px;opacity:0;transition:opacity .25s;pointer-events:none;max-width:90%}
 #toast.show{opacity:.95}
 .err{background:#FFF4D6;border-color:#F2D48A}
@@ -71,7 +81,7 @@ label.chk input{width:22px;height:22px;min-height:0;accent-color:#E0A800}
     <h2>📺 實時畫面</h2>
     <div class="screen" id="screen"><div class="ph" id="ph">等電腦傳畫面…<br>（電腦要開著程式，並勾選「允許遠端遙控」）</div></div>
     <div class="row"><span class="muted grow" id="frameAge">紅圈＝自動收成會點的位置</span>
-      <button id="pause">⏸ 暫停畫面</button></div>
+      <button id="zoomBtn" class="yel">🔍 放大</button><button id="pause">⏸ 暫停</button></div>
   </div>
 
   <div class="card">
@@ -111,6 +121,11 @@ label.chk input{width:22px;height:22px;min-height:0;accent-color:#E0A800}
 
   <p class="muted">🔒 指令和畫面全部用 QR Code 裡的金鑰加密（AES-256），中繼伺服器看不到內容；金鑰只存在這支手機上，不會傳到任何伺服器。連結等於遙控器，不要分享給別人；外流的話在電腦版按「🔄 換新連結」。</p>
 </main>
+<div id="viewer" aria-label="放大檢視">
+  <img id="vimg" alt="電腦畫面（放大）">
+  <div class="vbar vtop"><span class="vinfo" id="vinfo">兩指縮放、拖動，點兩下放大</span><button id="vfs" hidden>⛶ 全螢幕</button><button id="vclose">✕ 關閉</button></div>
+  <div class="vbar vbot"><button id="vout">➖</button><span id="vzoom">100%</span><button id="vin">➕</button><button id="vreset">↺ 符合畫面</button></div>
+</div>
 <div id="toast"></div>
 <script>
 (function(){
@@ -222,7 +237,9 @@ function onMsg(myGen,payload){
       var img=$('screen').querySelector('img');
       if(!img){$('screen').innerHTML='';img=document.createElement('img');img.alt='電腦畫面';$('screen').appendChild(img);}
       img.onload=function(){if(frameUrl)URL.revokeObjectURL(frameUrl);frameUrl=url;};
+      img.onclick=openViewer;
       img.src=url;lastFrame=Date.now();
+      if(vOpen)setViewerSrc(url);
     }
   }).catch(function(){});
 }
@@ -245,9 +262,10 @@ function tick(){
   else if(!lastStatus||age>45){c.textContent=(st?'離線':'等待中…');c.className='pill'+(st?' bad':'');}
   else{c.textContent='● 在線';c.className='pill on';}
   if(st&&st.running&&age<45){var n=Math.max(0,st.next_in-Math.round(age));$('st').textContent='執行中 · 下次 '+fmtNext(n)+(st.auto_rate&&st.smart?' · 🤖 自動判斷':'');}
-  if(lastFrame){var fa=Math.round((Date.now()-lastFrame)/1000);$('frameAge').textContent=(paused?'已暫停 · ':'')+'畫面 '+fa+' 秒前 · 紅圈＝會點的位置';}
+  if(lastFrame){var fa=Math.round((Date.now()-lastFrame)/1000);$('frameAge').textContent=(paused?'已暫停 · ':'')+'畫面 '+fa+' 秒前 · 紅圈＝會點的位置';
+    if(vOpen)$('vinfo').textContent=(paused?'已暫停 · ':'')+'畫面 '+fa+' 秒前'+(vw?' · '+vw+'×'+vh:'');}
 }
-function watch(){if(dev&&!paused&&document.visibilityState==='visible')cmd('watch');}
+function watch(){if(dev&&!paused&&document.visibilityState==='visible')cmd('watch',{hq:vOpen});}
 function stopConn(){gen++;if(mq){mq.close();mq=null;}}
 function connect(myGen){
   if(myGen!==gen)return;
@@ -273,6 +291,74 @@ function useDevice(d){
     .catch(function(){toast('這個裝置的金鑰壞掉了，請重新掃描');});
 }
 
+// ---- 🔍 放大檢視：兩指縮放、拖動、點兩下放大；開著時請電腦傳高解析度畫面 ----
+var vOpen=false,vs=1,vx=0,vy=0,vfit=1,vw=0,vh=0,ptrs={},pinch=null,drag=null,lastTap=0;
+var vimg=$('vimg'),viewer=$('viewer');
+function setViewerSrc(url){
+  var first=!vw;vimg.onload=function(){var nw=vimg.naturalWidth,nh=vimg.naturalHeight;
+    if(!vw||Math.abs(nw/nh-vw/vh)>0.01){vw=nw;vh=nh;fit();}else if(nw!==vw){var k=vw/nw;vs*=k;vfit*=k;vw=nw;vh=nh;apply();}};
+  vimg.src=url;
+}
+function bounds(){return {W:viewer.clientWidth,H:viewer.clientHeight};}
+function fit(){var b=bounds();vfit=Math.min(b.W/vw,b.H/vh);vs=vfit;vx=(b.W-vw*vs)/2;vy=(b.H-vh*vs)/2;apply();}
+function clamp(){var b=bounds(),w=vw*vs,h=vh*vs;
+  vx=w<=b.W?(b.W-w)/2:Math.min(0,Math.max(b.W-w,vx));vy=h<=b.H?(b.H-h)/2:Math.min(0,Math.max(b.H-h,vy));}
+function apply(){lastB=bounds();clamp();vimg.style.width=vw+'px';vimg.style.height=vh+'px';vimg.style.transform='translate('+vx+'px,'+vy+'px) scale('+vs+')';$('vzoom').textContent=Math.round(vs/vfit*100)+'%';}
+function zoomAt(f,cx,cy){var ns=Math.max(vfit,Math.min(vfit*8,vs*f));vx=cx-(cx-vx)*ns/vs;vy=cy-(cy-vy)*ns/vs;vs=ns;apply();}
+function openViewer(){
+  var img=$('screen').querySelector('img');if(!img)return toast('還沒有畫面');
+  vOpen=true;viewer.classList.add('open');vw=0;setViewerSrc(img.src);watch();
+  $('vfs').hidden=!(viewer.requestFullscreen||viewer.webkitRequestFullscreen);
+  try{history.pushState({viewer:1},'');}catch(e){}
+}
+function closeViewer(fromPop){
+  if(!vOpen)return;vOpen=false;viewer.classList.remove('open');
+  if(document.fullscreenElement)document.exitFullscreen().catch(function(){});
+  if(!fromPop){try{history.back();}catch(e){}}
+  watch();
+}
+window.addEventListener('popstate',function(){closeViewer(true);});
+$('zoomBtn').onclick=openViewer;$('vclose').onclick=function(){closeViewer(false);};
+$('vin').onclick=function(){var b=bounds();zoomAt(1.5,b.W/2,b.H/2);};
+$('vout').onclick=function(){var b=bounds();zoomAt(1/1.5,b.W/2,b.H/2);};
+$('vreset').onclick=fit;
+$('vfs').onclick=function(){var r=viewer.requestFullscreen?viewer.requestFullscreen():viewer.webkitRequestFullscreen();
+  if(r&&r.then)r.then(function(){try{screen.orientation.lock('landscape').catch(function(){});}catch(e){}setTimeout(fit,300);}).catch(function(){});};
+var lastB=null;
+window.addEventListener('resize',function(){  // 轉向、網址列收起時：保留目前的放大倍數和中心點
+  if(!vOpen||!vw||!lastB)return;
+  var rel=vs/vfit,px=(lastB.W/2-vx)/vs,py=(lastB.H/2-vy)/vs,b=bounds();
+  vfit=Math.min(b.W/vw,b.H/vh);vs=vfit*rel;vx=b.W/2-px*vs;vy=b.H/2-py*vs;apply();
+});
+viewer.addEventListener('pointerdown',function(e){
+  if(e.target.closest('.vbar'))return;
+  try{viewer.setPointerCapture(e.pointerId);}catch(err){}
+  ptrs[e.pointerId]={x:e.clientX,y:e.clientY};
+  var ids=Object.keys(ptrs);
+  if(ids.length===2){var a=ptrs[ids[0]],b=ptrs[ids[1]];pinch={d:Math.hypot(a.x-b.x,a.y-b.y),s:vs,cx:(a.x+b.x)/2,cy:(a.y+b.y)/2,vx:vx,vy:vy};drag=null;}
+  else if(ids.length===1){drag={x:e.clientX,y:e.clientY,vx:vx,vy:vy,moved:false};}
+});
+viewer.addEventListener('pointermove',function(e){
+  if(!ptrs[e.pointerId])return;ptrs[e.pointerId]={x:e.clientX,y:e.clientY};
+  var ids=Object.keys(ptrs);
+  if(pinch&&ids.length>=2){var a=ptrs[ids[0]],b=ptrs[ids[1]],d=Math.hypot(a.x-b.x,a.y-b.y),cx=(a.x+b.x)/2,cy=(a.y+b.y)/2;
+    var ns=Math.max(vfit,Math.min(vfit*8,pinch.s*d/pinch.d));
+    vx=cx-(pinch.cx-pinch.vx)*ns/pinch.s;vy=cy-(pinch.cy-pinch.vy)*ns/pinch.s;vs=ns;apply();}
+  else if(drag){var dx=e.clientX-drag.x,dy=e.clientY-drag.y;if(Math.abs(dx)+Math.abs(dy)>6)drag.moved=true;vx=drag.vx+dx;vy=drag.vy+dy;apply();}
+});
+function up(e){
+  if(!ptrs[e.pointerId])return;delete ptrs[e.pointerId];
+  var ids=Object.keys(ptrs);
+  if(ids.length<2)pinch=null;
+  if(ids.length===1){var p=ptrs[ids[0]];drag={x:p.x,y:p.y,vx:vx,vy:vy,moved:true};return;}
+  if(drag&&!drag.moved){var now=Date.now();
+    if(now-lastTap<320){if(vs>vfit*1.05)fit();else zoomAt(2.5,e.clientX,e.clientY);lastTap=0;}else lastTap=now;}
+  drag=null;
+}
+viewer.addEventListener('pointerup',up);viewer.addEventListener('pointercancel',up);
+viewer.addEventListener('wheel',function(e){e.preventDefault();zoomAt(e.deltaY<0?1.15:1/1.15,e.clientX,e.clientY);},{passive:false});
+document.addEventListener('keydown',function(e){if(vOpen&&e.key==='Escape')closeViewer(false);});
+
 $('go').onclick=function(){cmd(st&&st.running?'stop':'start');toast('已送出，等回應…');};
 $('once').onclick=function(){cmd('once');toast('已叫它點一下');};
 $('set').onclick=function(){var v=parseFloat($('iv').value);if(!(v>0))return toast('間隔要大於 0');edited=false;cmd('set',{interval:v,unit:$('un').value});toast('已送出新間隔，看上面的狀態有沒有變');};
@@ -280,7 +366,7 @@ $('iv').oninput=function(){edited=true;};
 $('ar').onchange=function(){cmd('auto_rate',{on:$('ar').checked});toast('已送出');};
 $('read').onclick=function(){cmd('read');toast('正在讀遊戲畫面…');};
 $('buy').onclick=function(){cmd('buy');toast('已送出');};
-$('pause').onclick=function(){paused=!paused;$('pause').textContent=paused?'▶ 繼續畫面':'⏸ 暫停畫面';if(!paused)watch();};
+$('pause').onclick=function(){paused=!paused;$('pause').textContent=paused?'▶ 繼續':'⏸ 暫停';if(!paused)watch();};
 document.addEventListener('visibilitychange',watch);
 setInterval(watch,6000);setInterval(tick,1000);setInterval(function(){if(!$('devList').contains(document.activeElement))renderDevices();},30000);
 

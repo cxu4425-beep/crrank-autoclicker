@@ -17,7 +17,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from tkinter import filedialog, messagebox, ttk
 
 APP_NAME = "CR Rank 自動收成器"
-APP_VERSION = "2.1"
+APP_VERSION = "2.2"
 REPO = "cxu4425-beep/crrank-autoclicker"
 GAME_URL = "https://crrank.xpgs25.com/game"
 
@@ -1295,6 +1295,7 @@ class RemoteLink:
         self.ok = False
         self.mq = None
         self.watch_until = 0.0
+        self.hq_until = 0.0
         self.seen = {}
         self.stop_evt = threading.Event()
         self.kick = threading.Event()
@@ -1379,7 +1380,9 @@ class RemoteLink:
             if watching and now - last_frame >= 1.5:
                 last_frame = now
                 try:
-                    mq.publish(self.topic("up"), self.seal(b"F", capture_frame(self.app.s)))
+                    hq = now < self.hq_until
+                    jpg = capture_frame(self.app.s, max_w=1600 if hq else 900, quality=70 if hq else 55)
+                    mq.publish(self.topic("up"), self.seal(b"F", jpg))
                 except Exception:
                     pass
             mq.ping_if_due()
@@ -1424,6 +1427,7 @@ class RemoteLink:
         a, cmd = self.app, c.get("cmd")
         if cmd == "watch":
             self.watch_until = time.time() + 20
+            self.hq_until = time.time() + 20 if c.get("hq") else 0  # 手機在放大檢視 → 傳高解析度
         elif cmd == "start":
             a.root.after(0, a.start)
         elif cmd == "stop":

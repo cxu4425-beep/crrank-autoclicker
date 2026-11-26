@@ -36,7 +36,7 @@ public final class Remote {
     private final Map<String, Long> seen = new HashMap<>();
     public volatile String state = "未啟動";
     public volatile boolean ok;
-    public volatile long watchUntil;
+    public volatile long watchUntil, hqUntil;
     private volatile boolean stopFlag;
     private volatile SSLSocket sock;
     private OutputStream out;
@@ -296,7 +296,8 @@ public final class Remote {
         ClickService s = ClickService.inst;
         if (s == null || android.os.Build.VERSION.SDK_INT < 30) return;
         capturing = true;
-        e.h.post(() -> s.captureJpeg(e.x, e.y, jpg -> {
+        final boolean hq = System.currentTimeMillis() < hqUntil;
+        e.h.post(() -> s.captureJpeg(e.x, e.y, hq ? 1080 : 540, hq ? 70 : 55, jpg -> {
             capturing = false;
             if (jpg != null) pendingFrame = jpg;
         }));
@@ -347,6 +348,7 @@ public final class Remote {
         final JSONObject cc = c;
         if ("watch".equals(cmd)) {
             watchUntil = now + 20000;
+            hqUntil = c.optBoolean("hq", false) ? now + 20000 : 0;  // 對方在放大檢視 → 傳高解析度
             return;
         }
         e.h.post(() -> {

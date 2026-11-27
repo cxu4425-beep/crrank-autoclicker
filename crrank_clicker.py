@@ -17,7 +17,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from tkinter import filedialog, messagebox, ttk
 
 APP_NAME = "CR Rank 自動收成器"
-APP_VERSION = "2.4"
+APP_VERSION = "2.5"
 REPO = "cxu4425-beep/crrank-autoclicker"
 GAME_URL = "https://crrank.xpgs25.com/game"
 
@@ -991,42 +991,91 @@ def print_window(hwnd):
         user32.ReleaseDC(hwnd, hdc)
 
 
-def ocr_pending():
-    """用 Windows 內建的文字辨識讀遊戲上方的「收成 +金幣/建材」（遊戲視窗被蓋住也可以）。回傳 (金幣, 建材) 或 None。"""
-    import subprocess
+def game_bar_visible(hwnd):
+    """遊戲上方的資源列有沒有真的顯示在螢幕上（沒縮小、沒被別的視窗擋住）。
+    被擋住的 Chrome 視窗不會重畫，擷取到的會是好幾分鐘前的舊數字，所以只讀看得到的。"""
+    import ctypes.wintypes as wt
+    try:
+        if user32.IsIconic(ctypes.c_void_p(hwnd)):
+            return False
+        r = wt.RECT()
+        user32.GetWindowRect(ctypes.c_void_p(hwnd), ctypes.byref(r))
+        w, h = r.right - r.left, r.bottom - r.top
+        if w < 200 or h < 150:
+            return False
+        user32.WindowFromPoint.restype = ctypes.c_void_p
+        user32.WindowFromPoint.argtypes = [wt.POINT]
+        user32.GetAncestor.restype = ctypes.c_void_p
+        user32.GetAncestor.argtypes = [ctypes.c_void_p, ctypes.c_uint]
+        y = r.top + max(70, int(h * 0.06))
+        me, hit = os.getpid(), False
+        for fx in (0.15, 0.3, 0.45):
+            top = user32.WindowFromPoint(wt.POINT(int(r.left + w * fx), y))
+            root = user32.GetAncestor(top, 2) if top else None  # GA_ROOT
+            if root == hwnd:
+                hit = True
+                continue
+            pid = wt.DWORD()
+            if root:
+                user32.GetWindowThreadProcessId(ctypes.c_void_p(root), ctypes.byref(pid))
+            if pid.value != me:  # 被別的程式擋住（自己這個程式的視窗不算，擷取時不會擋到）
+                return False
+        return hit
+    except Exception:
+        return False
+
+
+def _ocr_ps1():
     import tempfile
-    cands = [(t, h) for pri, t, h in _chromium_pages() if pri < 1 and not user32.IsIconic(h)]
-    if not cands:
-        return None
-    tmp = tempfile.gettempdir()
-    ps1 = os.path.join(tmp, "crrank_ocr.ps1")
+    ps1 = os.path.join(tempfile.gettempdir(), "crrank_ocr.ps1")
     try:
         if not os.path.isfile(ps1) or open(ps1, encoding="utf-8-sig").read() != OCR_PS1:
             with open(ps1, "w", encoding="utf-8-sig") as f:
                 f.write(OCR_PS1)
     except OSError:
         return None
-    for t, h in cands:
-        png = None
-        try:
-            img = print_window(h)
-            if img is None:
-                continue
-            img = img.crop((0, 0, img.width, max(60, int(img.height * 0.3))))
-            fd, png = tempfile.mkstemp(prefix="crrank_ocr_", suffix=".png")
-            os.close(fd)
-            img.save(png)
-            out = subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", ps1, png],
-                                 capture_output=True, timeout=30, creationflags=0x08000000)  # 不跳出黑色視窗
-        except Exception:
+    return ps1
+
+
+def _ocr_image(img):
+    """用 Windows 內建的文字辨識讀一張圖，回傳文字（已去掉空白、統一 +／）。"""
+    import subprocess
+    import tempfile
+    ps1 = _ocr_ps1()
+    if not ps1:
+        return ""
+    png = None
+    try:
+        fd, png = tempfile.mkstemp(prefix="crrank_ocr_", suffix=".png")
+        os.close(fd)
+        img.save(png)
+        out = subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", ps1, png],
+                             capture_output=True, timeout=30, creationflags=0x08000000)  # 不跳出黑色視窗
+        text = out.stdout.decode("utf-8", "replace")
+    except Exception:
+        return ""
+    finally:
+        if png:
+            try:
+                os.remove(png)
+            except OSError:
+                pass
+    return text.replace(" ", "").replace("＋", "+").replace("十", "+").replace("／", "/")
+
+
+def _visible_game_windows(visible_only=True):
+    return [(t, h) for pri, t, h in _chromium_pages() if pri < 1 and not user32.IsIconic(h)
+            and (not visible_only or game_bar_visible(h))]
+
+
+def ocr_pending(visible_only=True):
+    """讀遊戲上方的「收成 +金幣/建材」。回傳 (金幣, 建材) 或 None。
+    visible_only＝只讀真的顯示在螢幕上的遊戲（被擋住的視窗畫面會停住，數字不準）。"""
+    for t, h in _visible_game_windows(visible_only):
+        img = print_window(h)
+        if img is None:
             continue
-        finally:
-            if png:
-                try:
-                    os.remove(png)
-                except OSError:
-                    pass
-        text = out.stdout.decode("utf-8", "replace").replace(" ", "").replace("＋", "+").replace("十", "+").replace("／", "/")
+        text = _ocr_image(img.crop((0, 0, img.width, max(60, int(img.height * 0.3)))))
         m = re.search(r"收成\+?\D{0,2}?(\d[\d,.]*[kK萬]?)/(\d[\d,.]*[kK萬]?)", text)
         if m:
             try:
@@ -1039,60 +1088,182 @@ def ocr_pending():
     return None
 
 
+def ocr_harvest_toast():
+    """點收成後，遊戲右下角會跳出「領取產出 +443 金幣、+322 建材」。讀出這次收了多少 (金幣, 建材)，沒有就回傳 None。"""
+    for t, h in _visible_game_windows(True):
+        img = print_window(h)
+        if img is None:
+            continue
+        text = _ocr_image(img.crop((int(img.width * 0.5), int(img.height * 0.5), img.width, img.height))).replace("\n", "")
+        m = re.search(r"\+?(\d[\d,]*)金幣.{0,4}?\+?(\d[\d,]*)建材", text)
+        if m:
+            try:
+                return game_num(m.group(1)), game_num(m.group(2))
+            except ValueError:
+                continue
+    return None
+
+
 class OcrRateTracker:
-    """看「收成 +x/y」長多快來估算每小時產量（讀不到網頁內容、也沒有擴充功能時用）。"""
+    """沒有擴充功能、也讀不到網頁內容時估算每小時產量。
+
+    遊戲上的「收成 +x/y」在 Chrome 節流時不會更新（量到會停好幾分鐘），不能拿來算；
+    但每次點收成，右下角都會跳出「領取產出 +金幣、+建材」，那是遊戲當下算好的實際收成量：
+      產量 = 這次收了多少 ÷ 距離上次收成多久
+    最近 5 次取中位數；和中位數差很多時要連續兩次一樣才採用（例如升級後產量真的變了）。
+    """
+
+    KEEP = 5
 
     def __init__(self, s):
         self.s = s
-        self.run = []  # 這一輪（上次收成後）的 (時間, 金幣, 建材)
         self.lock = threading.Lock()
+        self.last_t = None          # 上一次確定有收到的時間（未收從 0 開始算）
+        self.pending_change = {}    # 和中位數差很多的估計，等下一次確認
+        self.cand = {}              # 還沒有歷史時的第一個估計：要下一次也差不多才採用
+        self.prev_amt = {}          # 上一次的收成量和經過時間 {key: (量, 秒)}：用來發現倉庫上限
+        self.unconfirmed = False    # 上一次點完沒確認有收到
+        self.unconf_n = 0           # 連續幾次沒確認
+        self.stale_t = None         # 沒確認時，最後一次「確定有收到」的時間（只拿來估離滿還多久）
 
     def caps(self):
         c = self.s.get("game_caps") or {}
         return float(c.get("gold") or 2000), float(c.get("mat") or 1500)
 
+    def history(self):
+        h = self.s.get("ocr_rates2")
+        if not isinstance(h, dict):
+            h = {}
+        return {k: [float(x) for x in h.get(k, []) if isinstance(x, (int, float)) and x > 0][-self.KEEP:]
+                for k in ("gold", "mat")}
+
     def rates(self):
-        r = self.s.get("ocr_rates")
-        return r if isinstance(r, dict) and (r.get("gold") or r.get("mat")) else None
+        h, out = self.history(), {}
+        for k in ("gold", "mat"):
+            if h[k]:
+                v = sorted(h[k])
+                n = len(v)
+                out[k] = v[n // 2] if n % 2 else (v[n // 2 - 1] + v[n // 2]) / 2
+        return out or None
 
-    def add(self, t, g, m):
+    def rounds(self):
+        h, r = self.history(), self.rates() or {}
+        return min((len(h[k]) for k in r), default=0)
+
+    def needs_measure(self):
+        """還有資源沒有可信的產量 → 要用短間隔多收幾次來量。"""
+        h = self.history()
+        return not h["gold"] or not h["mat"]
+
+    def harvested(self, t, amounts=None, emptied=False):
+        """我們點了收成。amounts＝提示上的 (金幣, 建材)；沒讀到提示時 emptied＝「收成 +x/y」有沒有歸零。"""
         with self.lock:
-            self._add(t, g, m)
-
-    def _add(self, t, g, m):
-        cg, cm = self.caps()
-        if self.run and t - self.run[-1][0] > 180:
-            self.run = []  # 太久沒取樣（中間可能收過）→ 重來
-        if self.run and (g < self.run[-1][1] - 3 or m < self.run[-1][2] - 3):
-            if g <= cg * 0.15 and m <= cm * 0.15:
-                self.run = []  # 變回很小 → 收成過了，重新開始
+            self.unconfirmed = not amounts and not emptied
+            if self.unconfirmed:
+                self.unconf_n += 1
+                if self.last_t:
+                    self.stale_t = self.last_t
             else:
-                return  # 比上次少但還很多 → 多半是辨識錯，忽略這筆
-        self.run.append((t, g, m))
-        self.run = [x for x in self.run if t - x[0] <= 900] or [(t, g, m)]  # 只看最近 15 分鐘
-        t0, g0, m0 = self.run[0]
-        dt = t - t0
-        if dt < 20:
-            return
-        old = self.rates() or {}
-        new = dict(old)
-        for key, a, b, cap in (("gold", g0, g, cg), ("mat", m0, m, cm)):
-            if b >= cap * 0.98 or b - a < 8:  # 滿了就停產；長太少算不準
-                continue
-            est = (b - a) / dt * 3600
-            if not (0 < est <= cap * 60) or (old.get(key) and est > old[key] * 3 and dt < 120):
-                continue  # 不合理（多半是辨識錯）
-            new[key] = round(est if not old.get(key) else old[key] * 0.6 + est * 0.4, 1)
-        if new != old:
-            self.s["ocr_rates"] = new
-            save_settings(self.s)
+                self.unconf_n, self.stale_t = 0, None
+            if amounts:
+                prev, self.last_t = self.last_t, t
+                if prev is None:
+                    return
+                dt = t - prev
+                if dt < 60:
+                    return
+                cg, cm = self.caps()
+                known = self.s.get("game_caps") or {}
+                for key, v, cap in (("gold", amounts[0], cg), ("mat", amounts[1], cm)):
+                    pa = self.prev_amt.get(key)
+                    self.prev_amt[key] = (v, dt)
+                    if key not in known and pa and v >= 50 and abs(v - pa[0]) <= max(2, v * 0.02) \
+                            and abs(dt - pa[1]) > 0.15 * min(dt, pa[1]):
+                        # 兩次收到一樣多、但間隔差很多 → 倉庫滿了，這個量就是上限
+                        self.s["game_caps"] = dict(known, **{key: float(v)})
+                        known = self.s["game_caps"]
+                        save_settings(self.s)
+                        cap = float(v)
+                    if v >= cap * 0.98:
+                        # 倉庫滿了：算不出產量，但至少知道 產量 ≥ 上限 ÷ 經過時間；
+                        # 目前的估計比這還低 → 估錯了（例如中途有人收成），丟掉重新量
+                        r = (self.rates() or {}).get(key)
+                        if r and r < cap / dt * 3600 * 0.97:
+                            h = self.history()
+                            h[key] = []
+                            self.s["ocr_rates2"] = h
+                            self.cand.pop(key, None)
+                            self.pending_change.pop(key, None)
+                            save_settings(self.s)
+                        continue
+                    if v < 10:
+                        continue  # 太少算不準
+                    est = v / dt * 3600
+                    if 0 < est <= cap * 60:
+                        self._push(key, round(est, 1))
+            elif emptied:
+                self.last_t = t  # 確定收到了，但不知道收了多少 → 只更新起點
+            else:
+                # 不確定有沒有收到（遊戲被擋住、沒讀到）：不知道起點了 → 不拿下一次來算，
+                # 收成時間交給 App 改成 5 分鐘後再試（不會每 60 秒一直點）
+                self.last_t = None
 
-    def state(self, pending):
-        r = self.rates()
-        if not r:
-            return None
-        cg, cm = self.caps()
-        st = {"pending": pending, "src": "ocr", "where": "畫面辨識", "at": time.time()}
+    def retry_seconds(self, now=None, default=300.0):
+        """沒確認有收到時，多久後再試：在倉庫可能滿之前（最快 60 秒、最慢 5 分鐘）；
+        連續 3 次都沒確認（遊戲多半被擋住了）就固定 5 分鐘，不會一直點。"""
+        now = now or time.time()
+        with self.lock:
+            r = self.rates() or {}
+            if self.unconf_n > 2 or not self.stale_t or not r:
+                return default
+            cg, cm = self.caps()
+            el = now - self.stale_t
+            left = [(cap * 0.98 - r[k] * el / 3600) / r[k] * 3600 for k, cap in (("gold", cg), ("mat", cm)) if r.get(k)]
+            return max(60.0, min(default, min(left))) if left else default
+
+    def _push(self, k, est):
+        h = self.history()
+        if not h[k]:  # 第一個估計不直接相信：要連續兩次差不多（10% 內）才採用
+            c = self.cand.get(k)
+            if c and abs(est - c) / c <= 0.10:
+                h[k] = [c, est]
+                self.cand.pop(k, None)
+                self.s["ocr_rates2"] = h
+                save_settings(self.s)
+            else:
+                self.cand[k] = est
+            return
+        med = (self.rates() or {}).get(k)
+        if med and abs(est - med) / med > 0.25:
+            prev = self.pending_change.get(k)
+            if prev and abs(est - prev) / prev <= 0.10:
+                h[k] = [prev, est]  # 連續兩次都一樣 → 產量真的變了
+                self.pending_change.pop(k, None)
+            else:
+                self.pending_change[k] = est  # 先記著，等下一次確認（多半是中途有人手動收成）
+                return
+        else:
+            self.pending_change.pop(k, None)
+            h[k] = (h[k] + [est])[-self.KEEP:]
+        self.s["ocr_rates2"] = h
+        save_settings(self.s)
+
+    def state(self, now=None, fallback=None):
+        """fallback＝還沒有估計值時先用的產量（使用者在「依產量算」填的）。"""
+        now = now or time.time()
+        with self.lock:
+            own = self.rates() or {}
+            r = dict(fallback or {}, **own)  # 還沒算出來的那種資源先用手動填的
+            src = "ocr" if own and set(r) <= set(own) else "manual"
+            if not r:
+                return None
+            cg, cm = self.caps()
+            if self.last_t:
+                el = max(0.0, now - self.last_t) / 3600
+                pending = (min(cg, r.get("gold", 0) * el), min(cm, r.get("mat", 0) * el))
+            else:
+                pending = None
+        st = {"pending": pending, "src": src, "where": "畫面辨識", "at": now, "rounds": self.rounds()}
         if r.get("gold"):
             st["gold"] = {"rate": r["gold"], "cap": cg}
         if r.get("mat"):
@@ -2163,12 +2334,13 @@ class App:
         self.root.minsize(int(520 * UI_K), int(520 * UI_K))
         self.clicker.on_change = lambda: self.root.after(0, self.refresh_btn)
         self.clicker.smart_fn = self.smart_wait
-        self.clicker.pre_click_fn = self.pre_click
         self.rate_lock = threading.Lock()
         self.last_click_at = 0.0
         self.ext_state = None
         self.ocr = OcrRateTracker(self.s)
         self.ocr_waiting = False
+        self.ocr_quick_n = 0
+        self.last_harvest_read = None
         self.rate_state, self.rate_ok, self.rate_checked, self.smart_used = None, None, 0, False
         self.buyer = BuyRunner(self.s)
         self.buyer.on_change = lambda: self.root.after(0, self.refresh_buy)
@@ -2550,26 +2722,25 @@ class App:
             if after_click or ext["at"] < self.last_click_at:
                 st["pending"] = None  # 剛收完：還沒收的當作 0（擴充功能最多 30 秒才回報一次）
         if not st:
+            # 讀網頁失敗過 → 5 分鐘內只快速看一下、不再花好幾秒叫醒 Chrome（畫面辨識用不到它）
+            quick = time.time() < getattr(self, "acc_fail_until", 0)
             try:
-                st = read_game_state()
+                st = read_game_state(patience=0 if quick else 6)
             except Exception:
                 st = None
             if st:
                 st["src"] = "acc"
+                self.acc_fail_until = 0
+            elif not quick:
+                self.acc_fail_until = time.time() + 300
         if st and st.get("src") in ("ext", "acc"):  # 記住遊戲實際的上限，畫面辨識也用得到
             caps = {k: st[k]["cap"] for k in ("gold", "mat") if st.get(k)}
             if caps and caps != {k: v for k, v in (self.s.get("game_caps") or {}).items() if k in caps}:
                 self.s["game_caps"] = dict(self.s.get("game_caps") or {}, **caps)
                 save_settings(self.s)
         if not st:
-            try:
-                p = ocr_pending()
-            except Exception:
-                p = None
-            if p:
-                self.ocr.add(time.time(), *p)
-                st = self.ocr.state((0, 0) if after_click else p)
-                self.ocr_waiting = st is None
+            st = self.ocr.state(fallback=self.manual_rates())
+            self.ocr_waiting = st is None
         if st:
             self.rate_state = st
         self.rate_ok = bool(st)
@@ -2580,46 +2751,74 @@ class App:
             pass
         return st
 
-    def pre_click(self, evt):
-        """點收成前：如果正在用畫面辨識估算，先讀一次「收成 +x/y」（和收完後的 0 比，就知道長多快）。"""
-        st = self.rate_state if self.rate_ok else None
-        if st and st.get("src") in ("ext", "acc") and time.time() - st.get("at", 0) < 300:
-            return
-        if not self.rate_lock.acquire(timeout=10):
-            return
+    def manual_rates(self):
+        """使用者在「📊 依產量算」填的產量（畫面辨識還沒算出來前先用）。"""
         try:
-            if evt.is_set():
-                return
-            p = ocr_pending()
-            if p:
-                self.ocr.add(time.time(), *p)
-        except Exception:
-            pass
-        finally:
-            self.rate_lock.release()
+            g, m = float(self.s.get("rate_gold") or 0), float(self.s.get("rate_mat") or 0)
+        except (TypeError, ValueError):
+            return None
+        r = {k: v for k, v in (("gold", g), ("mat", m)) if v > 0}
+        return r or None
 
     def smart_wait(self, after_click, evt=None):
         """連點每次點完呼叫：等遊戲畫面更新後讀數字，回傳到快滿還有幾秒（讀不到回傳 None）。"""
         evt = evt or self.clicker.stop_evt
         if after_click:
-            self.last_click_at = time.time()
-            if evt.wait(2.5):
+            t_click = self.last_click_at = time.time()
+            if evt.wait(1.2):
                 return None
-        sec = smart_wait_seconds(self.read_rates(after_click=after_click))
+            self.read_harvest(t_click, evt)
+            if evt.is_set():
+                return None
+        st = self.read_rates(after_click=after_click)
+        sec = smart_wait_seconds(st)
+        ocr_mode = not st or st.get("src") in ("manual", "ocr")
+        if after_click and ocr_mode and self.ocr.unconfirmed:
+            # 不確定有沒有收到 → 在倉庫可能滿之前再試一次（最慢 5 分鐘）
+            sec = min(sec or self.clicker.interval_sec(), self.ocr.retry_seconds(default=min(300.0, self.clicker.interval_sec())))
+        elif after_click and ocr_mode and self.ocr.needs_measure() and self.ocr.last_t and self.ocr_quick_n < 6:
+            # 畫面辨識還沒有估計值：這一輪最多 5 分鐘就再收一次，從「領取產出」算出產量（提早收不會浪費）
+            sec = min(sec or self.clicker.interval_sec(), 300.0)
+            self.ocr_quick_n += 1
+        elif not self.ocr.needs_measure():
+            self.ocr_quick_n = 0
         self.smart_used = sec is not None
         return sec
 
+    def read_harvest(self, t_click, evt):
+        """點收成後讀「領取產出 +金幣、+建材」提示，給畫面辨識估算產量（擴充功能／讀網頁可用時就不讀）。"""
+        st = self.rate_state if self.rate_ok else None
+        if st and st.get("src") in ("ext", "acc") and time.time() - st.get("at", 0) < 300:
+            with self.ocr.lock:
+                self.ocr.last_t = None  # 用擴充功能／讀網頁時不追蹤；之後切回畫面辨識要重新起算
+            return
+        # 不用 rate_lock：提示只會出現幾秒，不能等別的讀取（估算器有自己的鎖）
+        amounts, emptied = None, False
+        try:
+            amounts = ocr_harvest_toast()
+            if amounts is None and not evt.wait(1.0):
+                amounts = ocr_harvest_toast()  # 提示晚一點出來 → 再試一次
+            if amounts is None:
+                p = ocr_pending()
+                cg, cm = self.ocr.caps()
+                emptied = bool(p) and p[0] <= cg * 0.05 and p[1] <= cm * 0.05
+        except Exception:
+            pass
+        self.ocr.harvested(t_click, amounts, emptied)
+        self.last_harvest_read = amounts
+
     def rate_watch(self):
-        last = 0.0
+        last = last_keep = 0.0
         while True:
+            now = time.time()
             if self.s.get("auto_rate"):
-                # 收成執行中也定時讀（畫面辨識要靠多次讀取「收成 +x/y」來估算產量）
-                if time.time() - last >= (40 if self.clicker.running else 60):
-                    last = time.time()
+                if now - last >= (40 if self.clicker.running else 60):
+                    last = now
                     self.read_rates(wait_lock=False)
-                else:
+                elif now - last_keep >= 20:
+                    last_keep = now
                     chrome_keepalive()  # 讓 Chrome 保持打開網頁的輔助功能，收成時讀取才會立即成功
-            time.sleep(20)
+            time.sleep(5)
 
     def refresh_rate_lbl(self):
         if not self.s.get("auto_rate"):
@@ -2633,13 +2832,16 @@ class App:
         if self.rate_ok and st:
             sec = smart_wait_seconds(st)
             mins = max(1, int(round(sec / 60))) if sec else 0
-            src = {"ext": "擴充功能", "acc": "讀網頁", "ocr": "畫面辨識估算"}.get(st.get("src"), "")
+            n = st.get("rounds", 0)
+            src = {"ext": "擴充功能", "acc": "讀網頁", "ocr": f"從最近 {n} 次「領取產出」算的",
+                   "manual": "先用你填的產量，收成後會自動算"}.get(st.get("src"), "")
             self.rate_lbl.config(style="Ok.TLabel", text=(
                 f"✔ {describe_state(st)}\n→ 約 {mins} 分鐘後快滿，到時自動收成（{when} {src}）"))
         elif getattr(self, "ocr_waiting", False):
             self.rate_lbl.config(style="Muted.TLabel", text=(
-                f"正在用畫面辨識估算產量（{when}）：看「收成 +x/y」長多快，大約 1～2 分鐘後會有結果。"
-                "裝了擴充功能（下面的「🧩 用原本的 Chrome」）會更準更快。"))
+                f"估算中（{when}）：開始自動收成後，程式會讀每次收成跳出的「領取產出 +金幣、+建材」，"
+                "第一輪最多 5 分鐘就再收一次，之後就知道每小時產量（遊戲畫面要露出來）。"
+                "也可以按「📊 依產量算」先填一次產量，或裝擴充功能（最準）。"))
         else:
             self.rate_lbl.config(style="Muted.TLabel", text=(
                 f"找不到遊戲（{when}）：在 Chrome／Edge 打開知識領土（分頁或應用程式視窗都可以），視窗不要縮到最小。"
@@ -3185,6 +3387,6 @@ if __name__ == "__main__":
         sys.exit(0)
     if len(sys.argv) >= 3 and sys.argv[1] == "--ocr-game":  # 自我檢查：畫面辨識讀「收成 +x/y」
         with open(sys.argv[2], "w", encoding="utf-8") as _f:
-            json.dump({"pending": ocr_pending()}, _f)
+            json.dump({"pending": ocr_pending(), "toast": ocr_harvest_toast()}, _f)
         sys.exit(0)
     App().run()
